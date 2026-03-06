@@ -41,12 +41,15 @@ public static class CommandHandler
                     "use_potion" => CombatActions.UsePotion(doc.RootElement),
                     "choose_node" => MapActions.ChooseNode(doc.RootElement),
                     // Stubs for v0.1
-                    "choose_card" => Stub("choose_card"),
-                    "skip" => Stub("skip"),
-                    "choose_option" => Stub("choose_option"),
-                    "proceed" => Stub("proceed"),
-                    "start_run" => Stub("start_run"),
-                    "abandon_run" => Stub("abandon_run"),
+                    "console" => ConsoleAction.Execute(doc.RootElement),
+                    "choose_card" => ScreenActions.ChooseCard(doc.RootElement),
+                    "skip" => ScreenActions.Skip(),
+                    "choose_option" => ScreenActions.ChooseOption(doc.RootElement),
+                    "choose_reward" => ScreenActions.ChooseReward(doc.RootElement),
+                    "proceed" => ScreenActions.Proceed(),
+                    "start_run" => RunActions.StartRun(doc.RootElement),
+                    "abandon_run" => RunActions.AbandonRun(),
+                    "debug_tree" => DebugTree(doc.RootElement),
                     _ => Error("unknown_action", $"Unknown action: {action}")
                 };
 
@@ -101,6 +104,35 @@ public static class CommandHandler
     public static string Stub(string action)
     {
         return Ok(action, new { stub = true, message = $"'{action}' is not yet implemented" });
+    }
+
+    private static string DebugTree(JsonElement request)
+    {
+        var path = "/root";
+        if (request.TryGetProperty("path", out var pathEl))
+            path = pathEl.GetString() ?? "/root";
+        int depth = 3;
+        if (request.TryGetProperty("depth", out var depthEl))
+            depth = depthEl.GetInt32();
+
+        var tree = (Godot.SceneTree)Godot.Engine.GetMainLoop();
+        var node = tree.Root.GetNodeOrNull(path);
+        if (node == null)
+            return Error("not_found", $"Node not found: {path}");
+
+        var lines = new System.Collections.Generic.List<string>();
+        DumpNode(node, 0, depth, lines);
+        return Ok("debug_tree", new { path, lines });
+    }
+
+    private static void DumpNode(Godot.Node node, int level, int maxDepth, System.Collections.Generic.List<string> lines)
+    {
+        var indent = new string(' ', level * 2);
+        var vis = node is Godot.CanvasItem ci ? (ci.Visible ? "V" : "H") : "?";
+        lines.Add($"{indent}{node.Name} [{node.GetType().Name}] ({vis})");
+        if (level >= maxDepth) return;
+        foreach (var child in node.GetChildren())
+            DumpNode(child, level + 1, maxDepth, lines);
     }
 
     internal static JsonSerializerOptions GetJsonOpts() => JsonOpts;

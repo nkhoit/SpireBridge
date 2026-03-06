@@ -40,6 +40,22 @@ public static class SpireBridgeMod
         tree.Root.CallDeferred("add_child", timer);
 
         Log("SpireBridge initialized. WebSocket server starting on port " + Port);
+
+        // Subscribe to game events for push-based state updates (deferred to ensure singletons exist)
+        tree.Root.CallDeferred("call_deferred", Callable.From(() =>
+        {
+            // Delay subscription slightly to let game singletons initialize
+            var subscribeTimer = new Godot.Timer();
+            subscribeTimer.WaitTime = 2.0;
+            subscribeTimer.OneShot = true;
+            subscribeTimer.Timeout += () =>
+            {
+                GameEventBridge.Subscribe();
+                subscribeTimer.QueueFree();
+            };
+            tree.Root.AddChild(subscribeTimer);
+            subscribeTimer.Start();
+        }));
     }
 
     private static void RunServer()
@@ -166,6 +182,7 @@ public static class SpireBridgeMod
     }
 
     /// <summary>Broadcast a message to all connected clients.</summary>
+    public static void BroadcastToClients(string message) => Broadcast(message);
     public static void Broadcast(string message)
     {
         List<WebSocket> snapshot;

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
+using Godot;
 using MegaCrit.Sts2.Core.Combat;
 using MegaCrit.Sts2.Core.Context;
 using MegaCrit.Sts2.Core.Entities.Cards;
@@ -10,6 +11,8 @@ using MegaCrit.Sts2.Core.Entities.Players;
 using MegaCrit.Sts2.Core.Map;
 using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.MonsterMoves.Intents;
+using MegaCrit.Sts2.Core.Nodes.Screens.Map;
+using MegaCrit.Sts2.Core.Nodes.Screens.Overlays;
 using MegaCrit.Sts2.Core.Runs;
 
 namespace SpireBridge;
@@ -57,16 +60,77 @@ public static class StateReader
         // Map info
         state["map"] = BuildMapInfo(runState);
 
+        // Event info
+        if (state["screen"]?.ToString() == "event")
+        {
+            state["event"] = BuildEventInfo();
+        }
+
+        // Rewards info
+        if (state["screen"]?.ToString() == "rewards")
+        {
+            state["rewards"] = BuildRewardsInfo();
+        }
+
+        // Sequence number for staleness detection
+        state["seq"] = GameEventBridge.CurrentSeq;
+
         return CommandHandler.Ok("get_state", state);
     }
 
     private static string GetCurrentScreen(RunState runState)
     {
-        if (CombatManager.Instance.IsInProgress)
-            return "combat";
         if (runState.IsGameOver)
             return "game_over";
-        // Rough detection — can be refined
+        if (CombatManager.Instance.IsInProgress)
+            return "combat";
+
+        // Check overlay stack FIRST (overlays sit on top of events/map)
+        try
+        {
+            var overlay = NOverlayStack.Instance?.Peek();
+            if (overlay != null && overlay is CanvasItem overlayNode && overlayNode.IsInsideTree() && overlayNode.IsVisibleInTree())
+            {
+                var typeName = overlay.GetType().Name;
+                if (typeName.Contains("Reward") && typeName.Contains("Card"))
+                    return "card_reward";
+                if (typeName.Contains("Reward"))
+                    return "rewards";
+                if (typeName.Contains("Shop"))
+                    return "shop";
+                if (typeName.Contains("Event"))
+                    return "event";
+                if (typeName.Contains("RestSite") || typeName.Contains("Campfire"))
+                    return "rest_site";
+                if (typeName.Contains("CardSelection") || typeName.Contains("CardSelect"))
+                    return "card_select";
+                if (typeName.Contains("GameOver"))
+                    return "game_over";
+                // Log unknown overlay for debugging
+                SpireBridgeMod.Log($"Unknown overlay: {typeName}");
+                return typeName.ToLowerInvariant();
+            }
+        }
+        catch { /* overlay stack may not exist */ }
+
+        // Check if map screen is open (takes priority over event room — events open map on proceed)
+        try
+        {
+            if (NMapScreen.Instance?.IsOpen == true)
+                return "map";
+        }
+        catch { }
+
+        // Check for event room (events are room-based, not overlays)
+        try
+        {
+            var tree = (SceneTree)Engine.GetMainLoop();
+            var eventRoom = tree.Root.GetNodeOrNull("/root/Game/RootSceneContainer/Run/RoomContainer/EventRoom");
+            if (eventRoom != null && eventRoom.IsInsideTree())
+                return "event";
+        }
+        catch { }
+
         return "map";
     }
 
@@ -173,6 +237,87 @@ public static class StateReader
         }
 
         return info;
+    }
+
+    private static List<Dictionary<string, object?>> BuildRewardsInfo()
+    {
+        var rewards = new List<Dictionary<string, object?>>();
+        try
+        {
+            var root = ((SceneTree)Engine.GetMainLoop()).Root;
+            var buttons = FindAll<MegaCrit.Sts2.Core.Nodes.Rewards.NRewardButton>(root)
+                .Where(b => b.IsVisibleInTree() && b.IsEnabled)
+                .ToList();
+            foreach (var btn in buttons)
+            {
+                var r = new Dictionary<string, object?>
+                {
+                    ["index"] = rewards.Count,
+                    ["type"] = btn.Reward?.GetType().Name ?? "unknown",
+                };
+                // Try to get details
+                try
+                {
+                    if (btn.Reward is MegaCrit.Sts2.Core.Rewards.GoldReward gold)
+                        r["gold"] = gold.Amount;
+                }
+                catch { }
+                rewards.Add(r);
+            }
+        }
+        catch { }
+        return rewards;
+    }
+
+    private static Dictionary<string, object?> BuildEventInfo()
+    {
+        var info = new Dictionary<string, object?>();
+        try
+        {
+            var tree = (SceneTree)Engine.GetMainLoop();
+            var eventRoom = tree.Root.GetNodeOrNull("/root/Game/RootSceneContainer/Run/RoomContainer/EventRoom");
+            if (eventRoom == null) return info;
+
+            var buttons = FindAll<MegaCrit.Sts2.Core.Nodes.Events.NEventOptionButton>(eventRoom)
+                .Where(b => b.IsVisibleInTree() && b.IsEnabled)
+                .ToList();
+
+            var options = new List<Dictionary<string, object?>>();
+            foreach (var btn in buttons)
+            {
+                var opt = new Dictionary<string, object?>
+                {
+                    ["index"] = options.Count,
+                    ["locked"] = btn.Option?.IsLocked ?? false,
+                    ["is_proceed"] = btn.Option?.IsProceed ?? false,
+                };
+                // Try to get label text
+                try { opt["text"] = btn.Option?.Description?.ToString() ?? btn.Option?.TextKey ?? ""; } catch { }
+                try { opt["event_id"] = btn.Event?.Id?.Entry; } catch { }
+                options.Add(opt);
+            }
+            info["options"] = options;
+            info["option_count"] = options.Count;
+        }
+        catch (Exception ex)
+        {
+            info["error"] = ex.Message;
+        }
+        return info;
+    }
+
+    private static List<T> FindAll<T>(Node root) where T : Node
+    {
+        var results = new List<T>();
+        FindAllRecursive(root, results);
+        return results;
+    }
+
+    private static void FindAllRecursive<T>(Node node, List<T> results) where T : Node
+    {
+        if (node is T t) results.Add(t);
+        foreach (var child in node.GetChildren())
+            FindAllRecursive(child, results);
     }
 
     private static Dictionary<string, object?> BuildMapInfo(RunState runState)

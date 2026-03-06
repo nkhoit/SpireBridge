@@ -5,6 +5,7 @@ using Godot;
 using MegaCrit.Sts2.Core.Map;
 using MegaCrit.Sts2.Core.Nodes;
 using MegaCrit.Sts2.Core.Nodes.Screens.Map;
+using MegaCrit.Sts2.Core.Nodes.GodotExtensions;
 using MegaCrit.Sts2.Core.Runs;
 
 namespace SpireBridge;
@@ -63,8 +64,8 @@ public static class MapActions
             if (targetNMapPoint == null)
                 return CommandHandler.Error("node_not_found", $"Map point UI element at ({row}, {col}) not found");
 
-            // Simulate click by emitting pressed signal
-            targetNMapPoint.EmitSignal("pressed");
+            // Use ForceClick like AutoSlayer does (NMapPoint → NButton → NClickableControl)
+            targetNMapPoint.ForceClick();
         }
         catch (Exception ex)
         {

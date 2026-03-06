@@ -34,9 +34,9 @@ public static class CombatActions
         if (player?.PlayerCombatState == null)
             return CommandHandler.Error("no_player", "Player not found");
 
-        // Get card index from request
-        if (!request.TryGetProperty("card_index", out var cardIdxEl))
-            return CommandHandler.Error("missing_param", "play requires 'card_index'");
+        // Get card index from request (accept both "card" and "card_index")
+        if (!request.TryGetProperty("card_index", out var cardIdxEl) && !request.TryGetProperty("card", out cardIdxEl))
+            return CommandHandler.Error("missing_param", "play requires 'card' or 'card_index'");
 
         int cardIndex = cardIdxEl.GetInt32();
         var hand = player.PlayerCombatState.Hand.Cards;
@@ -122,8 +122,8 @@ public static class CombatActions
         if (player == null)
             return CommandHandler.Error("no_player", "Player not found");
 
-        if (!request.TryGetProperty("potion_index", out var potionIdxEl))
-            return CommandHandler.Error("missing_param", "use_potion requires 'potion_index'");
+        if (!request.TryGetProperty("potion_index", out var potionIdxEl) && !request.TryGetProperty("potion", out potionIdxEl))
+            return CommandHandler.Error("missing_param", "use_potion requires 'potion' or 'potion_index'");
 
         int potionIndex = potionIdxEl.GetInt32();
         var slots = player.PotionSlots;
