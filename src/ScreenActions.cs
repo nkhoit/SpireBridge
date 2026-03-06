@@ -410,7 +410,53 @@ public static class ScreenActions
     }
 
     /// <summary>Safely find NButton descendants, catching BadImageFormatException from problematic nodes.</summary>
-    private static List<NButton> SafeFindButtons(Node root)
+        public static string ShopBuy(JsonElement request)
+    {
+        try
+        {
+            if (!request.TryGetProperty("index", out var indexEl))
+                return CommandHandler.Error("missing_param", "shop_buy requires 'index'");
+
+            int index = indexEl.GetInt32();
+
+            var nMerchantRoom = NRun.Instance?.MerchantRoom;
+            if (nMerchantRoom == null)
+                return CommandHandler.Error("not_in_shop", "Not in a shop");
+
+            var inventory = nMerchantRoom.Room?.Inventory;
+            if (inventory == null)
+                return CommandHandler.Error("no_inventory", "Shop inventory not found");
+
+            var allEntries = inventory.AllEntries.ToList();
+            if (index < 0 || index >= allEntries.Count)
+                return CommandHandler.Error("invalid_index", $"Shop index {index} out of range (available: {allEntries.Count})");
+
+            var entry = allEntries[index];
+            if (!entry.IsStocked)
+                return CommandHandler.Error("out_of_stock", $"Item at index {index} is sold out");
+
+            if (!entry.EnoughGold)
+                return CommandHandler.Error("not_enough_gold", $"Not enough gold ({inventory.Player?.Gold ?? 0} < {entry.Cost})");
+
+            SpireBridgeMod.Log($"shop_buy: purchasing index {index}, cost {entry.Cost}");
+
+            // Card removal has its own wrapper that opens a card select screen
+            if (entry is MegaCrit.Sts2.Core.Entities.Merchant.MerchantCardRemovalEntry removalEntry)
+            {
+                MegaCrit.Sts2.Core.Helpers.TaskHelper.RunSafely(removalEntry.OnTryPurchaseWrapper(inventory));
+                return CommandHandler.Ok("shop_buy", new { index, type = "card_removal", cost = entry.Cost });
+            }
+
+            MegaCrit.Sts2.Core.Helpers.TaskHelper.RunSafely(entry.OnTryPurchaseWrapper(inventory));
+            return CommandHandler.Ok("shop_buy", new { index, cost = entry.Cost });
+        }
+        catch (Exception ex)
+        {
+            return CommandHandler.Error("error", $"Shop buy error: {ex.Message}");
+        }
+    }
+
+private static List<NButton> SafeFindButtons(Node root)
     {
         var results = new List<NButton>();
         SafeFindButtonsRecursive(root, results);

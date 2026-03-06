@@ -19,6 +19,8 @@ using MegaCrit.Sts2.Core.Nodes.Cards.Holders;
 using MegaCrit.Sts2.Core.Runs;
 using MegaCrit.Sts2.Core.Nodes;
 using MegaCrit.Sts2.Core.Nodes.RestSite;
+using MegaCrit.Sts2.Core.Nodes.Rooms;
+using MegaCrit.Sts2.Core.Rooms;
 
 namespace SpireBridge;
 
@@ -33,6 +35,19 @@ public static class StateReader
     {
         return BbCodeRegex.Replace(text, "");
     }
+
+    private static string SerializeCardDescription(CardModel card)
+    {
+        try
+        {
+            var desc = card.Description;
+            if (desc == null) return "";
+            card.DynamicVars.AddTo(desc);
+            return StripBBCode(desc.GetFormattedText());
+        }
+        catch { return ""; }
+    }
+
     public static string GetFullState()
     {
         var runState = RunManager.Instance.DebugOnlyGetState();
@@ -91,6 +106,12 @@ public static class StateReader
         if (state["screen"]?.ToString() == "rest_site")
         {
             state["rest_site"] = BuildRestSiteInfo();
+        }
+
+        // Shop info
+        if (state["screen"]?.ToString() == "shop")
+        {
+            state["shop"] = BuildShopState();
         }
 
         // Card reward choices
@@ -153,7 +174,26 @@ public static class StateReader
                 if (nRun.MerchantRoom != null && ((Control)nRun.MerchantRoom).IsVisibleInTree())
                 {
                     if (NMapScreen.Instance?.IsOpen != true)
-                        return "shop";
+                    {
+                        // Check if an overlay (card removal select) is on top
+                        var shopOverlay = NOverlayStack.Instance?.Peek();
+                        if (shopOverlay != null && shopOverlay is CanvasItem shopOv && shopOv.IsInsideTree() && shopOv.IsVisibleInTree())
+                        {
+                            var shopOvType = shopOverlay.GetType().Name;
+                            if (shopOvType.Contains("Select") || shopOvType.Contains("Card"))
+                            {
+                                // Fall through to overlay check below
+                            }
+                            else
+                            {
+                                return "shop";
+                            }
+                        }
+                        else
+                        {
+                            return "shop";
+                        }
+                    }
                 }
                 if (nRun.TreasureRoom != null && ((Control)nRun.TreasureRoom).IsVisibleInTree())
                 {
@@ -500,6 +540,121 @@ public static class StateReader
         return info;
     }
 
+    private static Dictionary<string, object?> BuildShopState()
+    {
+        var shop = new Dictionary<string, object?>();
+        try
+        {
+            var nMerchantRoom = NRun.Instance?.MerchantRoom;
+            if (nMerchantRoom == null) return shop;
+
+            var inventory = nMerchantRoom.Room?.Inventory;
+            if (inventory == null) return shop;
+
+            var items = new List<Dictionary<string, object?>>();
+            int idx = 0;
+
+            // Character cards
+            foreach (var entry in inventory.CharacterCardEntries)
+            {
+                if (!entry.IsStocked) { idx++; continue; }
+                var card = entry.CreationResult?.Card;
+                if (card == null) { idx++; continue; }
+                items.Add(new Dictionary<string, object?>
+                {
+                    ["index"] = idx,
+                    ["type"] = "card",
+                    ["category"] = "character",
+                    ["id"] = card.Id.Entry,
+                    ["name"] = StripBBCode(card.Title),
+                    ["description"] = SerializeCardDescription(card),
+                    ["cost"] = entry.Cost,
+                    ["affordable"] = entry.EnoughGold,
+                    ["rarity"] = card.Rarity.ToString(),
+                    ["card_type"] = card.Type.ToString(),
+                });
+                idx++;
+            }
+
+            // Colorless cards
+            foreach (var entry in inventory.ColorlessCardEntries)
+            {
+                if (!entry.IsStocked) { idx++; continue; }
+                var card = entry.CreationResult?.Card;
+                if (card == null) { idx++; continue; }
+                items.Add(new Dictionary<string, object?>
+                {
+                    ["index"] = idx,
+                    ["type"] = "card",
+                    ["category"] = "colorless",
+                    ["id"] = card.Id.Entry,
+                    ["name"] = StripBBCode(card.Title),
+                    ["cost"] = entry.Cost,
+                    ["affordable"] = entry.EnoughGold,
+                    ["rarity"] = card.Rarity.ToString(),
+                });
+                idx++;
+            }
+
+            // Relics
+            foreach (var entry in inventory.RelicEntries)
+            {
+                if (!entry.IsStocked) { idx++; continue; }
+                var relic = entry.Model;
+                if (relic == null) { idx++; continue; }
+                items.Add(new Dictionary<string, object?>
+                {
+                    ["index"] = idx,
+                    ["type"] = "relic",
+                    ["id"] = relic.Id.Entry,
+                    ["name"] = StripBBCode(relic.Title?.GetFormattedText() ?? relic.Id.Entry),
+                    ["description"] = StripBBCode(relic.Description?.GetFormattedText() ?? ""),
+                    ["cost"] = entry.Cost,
+                    ["affordable"] = entry.EnoughGold,
+                });
+                idx++;
+            }
+
+            // Potions
+            foreach (var entry in inventory.PotionEntries)
+            {
+                if (!entry.IsStocked) { idx++; continue; }
+                var potion = entry.Model;
+                if (potion == null) { idx++; continue; }
+                items.Add(new Dictionary<string, object?>
+                {
+                    ["index"] = idx,
+                    ["type"] = "potion",
+                    ["id"] = potion.Id.Entry,
+                    ["name"] = StripBBCode(potion.Title?.GetFormattedText() ?? potion.Id.Entry),
+                    ["cost"] = entry.Cost,
+                    ["affordable"] = entry.EnoughGold,
+                });
+                idx++;
+            }
+
+            // Card removal
+            if (inventory.CardRemovalEntry != null)
+            {
+                items.Add(new Dictionary<string, object?>
+                {
+                    ["index"] = idx,
+                    ["type"] = "card_removal",
+                    ["id"] = "CARD_REMOVAL",
+                    ["name"] = "Card Removal",
+                    ["description"] = "Remove a card from your deck",
+                    ["cost"] = inventory.CardRemovalEntry.Cost,
+                    ["affordable"] = inventory.CardRemovalEntry.EnoughGold,
+                });
+            }
+
+            shop["items"] = items;
+            shop["gold"] = inventory.Player?.Gold ?? 0;
+        }
+        catch (Exception ex) { SpireBridgeMod.Log($"BuildShopState error: {ex.Message}"); }
+        return shop;
+    }
+
     private static List<Dictionary<string, object?>> BuildCardChoices()
     {
         var choices = new List<Dictionary<string, object?>>();
@@ -623,7 +778,31 @@ public static class StateReader
                     actions.Add(new Dictionary<string, object?> { ["action"] = "start_run", ["description"] = "Start a new run" });
                     break;
                 case "shop":
-                    // TODO: Add buy/sell actions when shop support is implemented
+                    try
+                    {
+                        var shopRoom = NRun.Instance?.MerchantRoom;
+                        var shopInventory = shopRoom?.Room?.Inventory;
+                        if (shopInventory != null)
+                        {
+                            int shopIdx = 0;
+                            foreach (var entry in shopInventory.AllEntries)
+                            {
+                                if (entry.IsStocked)
+                                {
+                                    actions.Add(new Dictionary<string, object?>
+                                    {
+                                        ["action"] = "shop_buy",
+                                        ["index"] = shopIdx,
+                                        ["cost"] = entry.Cost,
+                                        ["affordable"] = entry.EnoughGold,
+                                        ["description"] = $"Buy item at index {shopIdx} for {entry.Cost} gold"
+                                    });
+                                }
+                                shopIdx++;
+                            }
+                        }
+                    }
+                    catch { }
                     actions.Add(new Dictionary<string, object?> { ["action"] = "proceed", ["description"] = "Leave shop" });
                     break;
                 case "treasure":
