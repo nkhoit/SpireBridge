@@ -590,6 +590,13 @@ public static class StateReader
                 case "main_menu":
                     actions.Add(new Dictionary<string, object?> { ["action"] = "start_run", ["description"] = "Start a new run" });
                     break;
+                case "shop":
+                    // TODO: Add buy/sell actions when shop support is implemented
+                    actions.Add(new Dictionary<string, object?> { ["action"] = "proceed", ["description"] = "Leave shop" });
+                    break;
+                case "treasure":
+                    actions.Add(new Dictionary<string, object?> { ["action"] = "proceed", ["description"] = "Leave treasure room" });
+                    break;
             }
         }
         catch (Exception ex)
@@ -615,7 +622,11 @@ public static class StateReader
                 if (combat["enemies"] is IEnumerable<object> enemyList)
                     foreach (var e in enemyList)
                         if (e is Dictionary<string, object?> ed)
-                            try { enemyIndices.Add((int)(ed["index"] ?? 0)); } catch { }
+                            try { 
+                                var hittable = ed["is_hittable"] as bool? ?? true;
+                                if (hittable)
+                                    enemyIndices.Add((int)(ed["index"] ?? 0)); 
+                            } catch { }
             }
             catch { }
 
@@ -642,6 +653,13 @@ public static class StateReader
                                     if (card["block"] != null) desc += $" ({card["block"]} block)";
                                 }
                                 catch { }
+
+                                // Skip targeted attacks when no enemies are alive/hittable
+                                if (targetType == "AnyEnemy" && enemyIndices.Count == 0)
+                                {
+                                    idx++;
+                                    continue;
+                                }
 
                                 var action = new Dictionary<string, object?>
                                 {
