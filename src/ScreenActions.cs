@@ -21,6 +21,22 @@ namespace SpireBridge;
 /// </summary>
 public static class ScreenActions
 {
+    // Track reward buttons that have already been clicked (like AutoSlayer's attemptedButtons)
+    // Reset when entering a new rewards screen
+    private static readonly HashSet<ulong> _attemptedRewardIds = new();
+    private static int _lastRewardsSeq = -1;
+
+    /// <summary>Reset attempted rewards tracking (called when new rewards screen opens).</summary>
+    public static void ResetRewardTracking()
+    {
+        _attemptedRewardIds.Clear();
+    }
+
+    /// <summary>Check if a reward button has already been attempted.</summary>
+    public static bool IsRewardAttempted(Godot.Node btn)
+    {
+        return _attemptedRewardIds.Contains(((GodotObject)btn).GetInstanceId());
+    }
     public static string Proceed()
     {
         try
@@ -60,9 +76,16 @@ public static class ScreenActions
     {
         try
         {
-            var root = ((SceneTree)Engine.GetMainLoop()).Root;
+            // Scope to overlay if available
+            Node searchRoot;
+            var overlay = NOverlayStack.Instance?.Peek();
+            if (overlay is Node overlayNode && overlayNode.IsInsideTree())
+                searchRoot = overlayNode;
+            else
+                searchRoot = ((SceneTree)Engine.GetMainLoop()).Root;
+
             // Look for skip/bowl button on card reward screen
-            var skipButtons = FindAll<NButton>(root)
+            var skipButtons = FindAll<NButton>(searchRoot)
                 .Where(b => b.IsVisibleInTree() && b.IsEnabled &&
                     (b.Name.ToString().Contains("Skip", StringComparison.OrdinalIgnoreCase) ||
                      b.Name.ToString().Contains("Bowl", StringComparison.OrdinalIgnoreCase)))
@@ -75,7 +98,7 @@ public static class ScreenActions
             }
 
             // Fallback: try the card reward alternative button (singing bowl / skip)
-            var altButtons = FindAll<NCardRewardAlternativeButton>(root)
+            var altButtons = FindAll<NCardRewardAlternativeButton>(searchRoot)
                 .Where(b => b.IsVisibleInTree() && b.IsEnabled)
                 .ToList();
             if (altButtons.Count > 0)
@@ -84,7 +107,19 @@ public static class ScreenActions
                 return CommandHandler.Ok("skip", new { clicked = "alternative_button" });
             }
 
-            return CommandHandler.Error("no_button", "No skip button found");
+            // Fallback: Close/Back button (for deck selection screens that can't be skipped)
+            var closeButtons = FindAll<NButton>(searchRoot)
+                .Where(b => b.IsVisibleInTree() && b.IsEnabled &&
+                    (b.Name.ToString().Contains("Close", StringComparison.OrdinalIgnoreCase) ||
+                     b.Name.ToString().Contains("Back", StringComparison.OrdinalIgnoreCase)))
+                .ToList();
+            if (closeButtons.Count > 0)
+            {
+                closeButtons[0].ForceClick();
+                return CommandHandler.Ok("skip", new { clicked = closeButtons[0].Name.ToString(), note = "used_close_button" });
+            }
+
+            return CommandHandler.Error("no_button", "No skip, close, or back button found");
         }
         catch (Exception ex)
         {
@@ -102,18 +137,16 @@ public static class ScreenActions
             int index = idxEl.GetInt32();
 
             // Scope to current overlay screen
-            Node searchRoot;
             var overlay = NOverlayStack.Instance?.Peek();
-            if (overlay is Node overlayNode && overlayNode.IsInsideTree())
-            {
-                searchRoot = overlayNode;
-                SpireBridgeMod.Log($"choose_card: overlay type = {overlay.GetType().Name}");
-            }
-            else
-            {
-                searchRoot = ((SceneTree)Engine.GetMainLoop()).Root;
-                SpireBridgeMod.Log("choose_card: no overlay, using root");
-            }
+            if (overlay == null || !(overlay is Node overlayNode && overlayNode.IsInsideTree()))
+                return CommandHandler.Error("wrong_screen", "No card selection screen open");
+
+            var overlayType = overlay.GetType().Name;
+            if (!overlayType.Contains("Card") && !overlayType.Contains("Reward"))
+                return CommandHandler.Error("wrong_screen", $"Not on a card selection screen (current: {overlayType})");
+
+            Node searchRoot = overlayNode;
+            SpireBridgeMod.Log($"choose_card: overlay type = {overlayType}");
 
             // Try NGridCardHolder specifically (used in selection screens)
             var gridHolders = FindAll<NGridCardHolder>(searchRoot)
@@ -161,18 +194,28 @@ public static class ScreenActions
                 return CommandHandler.Error("missing_param", "choose_reward requires 'index'");
 
             int index = idxEl.GetInt32();
-            var root = ((SceneTree)Engine.GetMainLoop()).Root;
 
-            // Find reward buttons
-            var rewardButtons = FindAll<NRewardButton>(root)
+            // Check we're on a rewards screen
+            var overlay = NOverlayStack.Instance?.Peek();
+            if (overlay == null || overlay.GetType().Name != "NRewardsScreen")
+                return CommandHandler.Error("wrong_screen", "Not on rewards screen");
+
+            var rewardButtons = FindAll<NRewardButton>((Node)overlay)
                 .Where(b => b.IsVisibleInTree() && b.IsEnabled)
                 .ToList();
 
             if (index < 0 || index >= rewardButtons.Count)
                 return CommandHandler.Error("invalid_index", $"Reward index {index} out of range (available: {rewardButtons.Count})");
 
-            rewardButtons[index].ForceClick();
-            var rewardType = rewardButtons[index].Reward?.GetType().Name ?? "unknown";
+            var btn = rewardButtons[index];
+            var btnId = btn.GetInstanceId();
+
+            if (_attemptedRewardIds.Contains(btnId))
+                return CommandHandler.Error("already_attempted", $"Reward at index {index} already attempted (skip or proceed instead)");
+
+            _attemptedRewardIds.Add(btnId);
+            btn.ForceClick();
+            var rewardType = btn.Reward?.GetType().Name ?? "unknown";
             return CommandHandler.Ok("choose_reward", new { index, reward_type = rewardType });
         }
         catch (Exception ex)
@@ -193,35 +236,23 @@ public static class ScreenActions
 
             // Events use NEventOptionButton in the EventRoom
             var eventRoom = root.GetNodeOrNull("/root/Game/RootSceneContainer/Run/RoomContainer/EventRoom");
-            if (eventRoom != null)
-            {
-                var eventButtons = FindAll<NEventOptionButton>(eventRoom)
-                    .Where(b => b.IsVisibleInTree() && b.IsEnabled && !b.Option.IsLocked)
-                    .ToList();
+            if (eventRoom == null)
+                return CommandHandler.Error("wrong_screen", "Not on an event screen");
 
-                if (eventButtons.Count > 0)
-                {
-                    if (index < 0 || index >= eventButtons.Count)
-                        return CommandHandler.Error("invalid_index", $"Option index {index} out of range (available: {eventButtons.Count})");
-
-                    var btn = eventButtons[index];
-                    btn.ForceClick();
-                    var isProceed = btn.Option?.IsProceed ?? false;
-                    return CommandHandler.Ok("choose_option", new { index, is_proceed = isProceed, event_id = btn.Event?.Id?.Entry });
-                }
-            }
-
-            // Fallback: generic button search
-            var buttons = FindAll<NButton>(root)
-                .Where(b => b.IsVisibleInTree() && b.IsEnabled &&
-                    (b.Name.ToString().Contains("Option") || b.Name.ToString().Contains("Choice")))
+            var eventButtons = FindAll<NEventOptionButton>(eventRoom)
+                .Where(b => b.IsVisibleInTree() && b.IsEnabled && !b.Option.IsLocked)
                 .ToList();
 
-            if (index < 0 || index >= buttons.Count)
-                return CommandHandler.Error("invalid_index", $"Option index {index} out of range (available: {buttons.Count})");
+            if (eventButtons.Count == 0)
+                return CommandHandler.Error("no_options", "No event options available");
 
-            buttons[index].ForceClick();
-            return CommandHandler.Ok("choose_option", new { index, button = buttons[index].Name.ToString() });
+            if (index < 0 || index >= eventButtons.Count)
+                return CommandHandler.Error("invalid_index", $"Option index {index} out of range (available: {eventButtons.Count})");
+
+            var btn = eventButtons[index];
+            btn.ForceClick();
+            var isProceed = btn.Option?.IsProceed ?? false;
+            return CommandHandler.Ok("choose_option", new { index, is_proceed = isProceed, event_id = btn.Event?.Id?.Entry });
         }
         catch (Exception ex)
         {

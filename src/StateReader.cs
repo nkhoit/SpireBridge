@@ -85,7 +85,33 @@ public static class StateReader
         if (CombatManager.Instance.IsInProgress)
             return "combat";
 
-        // Check overlay stack FIRST (overlays sit on top of events/map)
+        // Check if map screen is open FIRST — it takes priority even over overlays
+        // (rewards overlay stays in tree during close animation, but map is already open)
+        try
+        {
+            if (NMapScreen.Instance?.IsOpen == true)
+            {
+                // Check if there's a meaningful overlay on top (card selection from reward)
+                try
+                {
+                    var overlay = NOverlayStack.Instance?.Peek();
+                    if (overlay != null && overlay is CanvasItem ov && ov.IsInsideTree() && ov.IsVisibleInTree())
+                    {
+                        var typeName = overlay.GetType().Name;
+                        // Only card reward/selection overlays take priority over map
+                        if (typeName.Contains("CardSelection") || typeName.Contains("CardSelect"))
+                            return "card_select";
+                        if (typeName.Contains("Reward") && typeName.Contains("Card"))
+                            return "card_reward";
+                    }
+                }
+                catch { }
+                return "map";
+            }
+        }
+        catch { }
+
+        // Check overlay stack (overlays sit on top of events/map)
         try
         {
             var overlay = NOverlayStack.Instance?.Peek();
@@ -112,14 +138,6 @@ public static class StateReader
             }
         }
         catch { /* overlay stack may not exist */ }
-
-        // Check if map screen is open (takes priority over event room — events open map on proceed)
-        try
-        {
-            if (NMapScreen.Instance?.IsOpen == true)
-                return "map";
-        }
-        catch { }
 
         // Check for event room (events are room-based, not overlays)
         try
@@ -254,6 +272,7 @@ public static class StateReader
                 {
                     ["index"] = rewards.Count,
                     ["type"] = btn.Reward?.GetType().Name ?? "unknown",
+                    ["attempted"] = ScreenActions.IsRewardAttempted(btn),
                 };
                 // Try to get details
                 try

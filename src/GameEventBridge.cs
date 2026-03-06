@@ -37,7 +37,14 @@ public static class GameEventBridge
         // Overlay changes (rewards, events, card selection, etc.)
         if (NOverlayStack.Instance != null)
         {
-            NOverlayStack.Instance.Changed += () => Push("screen_changed");
+            NOverlayStack.Instance.Changed += () =>
+            {
+                // Reset reward tracking when a new rewards screen opens
+                var overlay = NOverlayStack.Instance?.Peek();
+                if (overlay?.GetType().Name == "NRewardsScreen")
+                    ScreenActions.ResetRewardTracking();
+                Push("screen_changed");
+            };
         }
 
         SpireBridgeMod.Log("GameEventBridge subscribed to game events");

@@ -52,29 +52,35 @@ public static class CombatActions
         Creature? target = null;
         if (card.TargetType == TargetType.AnyEnemy || card.TargetType == TargetType.AnyAlly)
         {
-            if (request.TryGetProperty("target_index", out var targetEl))
+            // Accept both "target" and "target_index"
+            if (!request.TryGetProperty("target", out var targetEl))
+                request.TryGetProperty("target_index", out targetEl);
+
+            var combatState = player.Creature.CombatState;
+            if (targetEl.ValueKind == JsonValueKind.Number)
             {
                 int targetIndex = targetEl.GetInt32();
-                var combatState = player.Creature.CombatState;
                 if (combatState != null)
                 {
-                    var enemies = combatState.HittableEnemies;
-                    if (card.TargetType == TargetType.AnyEnemy && targetIndex >= 0 && targetIndex < enemies.Count)
+                    if (card.TargetType == TargetType.AnyEnemy)
                     {
+                        var enemies = combatState.HittableEnemies;
+                        if (targetIndex < 0 || targetIndex >= enemies.Count)
+                            return CommandHandler.Error("invalid_index", $"target {targetIndex} out of range (enemies: {enemies.Count})");
                         target = enemies[targetIndex];
                     }
                     else if (card.TargetType == TargetType.AnyAlly)
                     {
                         var allies = combatState.Allies.Where(c => c.IsAlive && c.IsPlayer && c != player.Creature).ToList();
-                        if (targetIndex >= 0 && targetIndex < allies.Count)
-                            target = allies[targetIndex];
+                        if (targetIndex < 0 || targetIndex >= allies.Count)
+                            return CommandHandler.Error("invalid_index", $"target {targetIndex} out of range (allies: {allies.Count})");
+                        target = allies[targetIndex];
                     }
                 }
             }
             else if (card.TargetType == TargetType.AnyEnemy)
             {
                 // Default to first hittable enemy
-                var combatState = player.Creature.CombatState;
                 target = combatState?.HittableEnemies.FirstOrDefault();
             }
 
@@ -96,6 +102,8 @@ public static class CombatActions
     {
         if (!CombatManager.Instance.IsInProgress)
             return CommandHandler.Error("not_in_combat", "No combat in progress");
+        if (!CombatManager.Instance.IsPlayPhase)
+            return CommandHandler.Error("not_play_phase", "Not the player's turn");
 
         var runState = RunManager.Instance.DebugOnlyGetState();
         if (runState == null)
