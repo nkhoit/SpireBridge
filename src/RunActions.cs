@@ -28,9 +28,13 @@ public static class RunActions
         if (request.TryGetProperty("character", out var charEl))
             character = charEl.GetString() ?? "Ironclad";
 
+        int ascension = -1; // -1 = don't change
+        if (request.TryGetProperty("ascension", out var ascEl))
+            ascension = ascEl.GetInt32();
+
         _navigating = true;
-        StartRunAsync(character);
-        return CommandHandler.Ok("start_run", new { status = "navigating", character });
+        StartRunAsync(character, ascension);
+        return CommandHandler.Ok("start_run", new { status = "navigating", character, ascension = ascension >= 0 ? (int?)ascension : null });
     }
 
     public static string AbandonRun()
@@ -40,10 +44,17 @@ public static class RunActions
 
         _navigating = true;
         AbandonRunAsync();
-        return CommandHandler.Ok("abandon_run", new { status = "navigating" });
+        return CommandHandler.Ok("abandon_run", new { status = "abandoning" });
     }
 
-    private static async void StartRunAsync(string characterId)
+    private static void BroadcastProgress(string step, string detail = "")
+    {
+        var msg = JsonSerializer.Serialize(new { @event = "run_progress", step, detail });
+        SpireBridgeMod.BroadcastToClients(msg);
+        SpireBridgeMod.Log($"start_run: {step} {detail}".TrimEnd());
+    }
+
+    private static async void StartRunAsync(string characterId, int ascension)
     {
         try
         {
@@ -54,8 +65,7 @@ public static class RunActions
             var mainMenu = root.GetNodeOrNull<Control>("/root/Game/RootSceneContainer/MainMenu");
             if (mainMenu == null)
             {
-                SpireBridgeMod.Log("start_run: Main menu not found");
-                _navigating = false;
+                BroadcastProgress("error", "Main menu not found — are you in a run? Use abandon_run first.");
                 return;
             }
 
@@ -63,7 +73,7 @@ public static class RunActions
             var abandonBtn = mainMenu.GetNodeOrNull<NButton>("MainMenuTextButtons/AbandonRunButton");
             if (abandonBtn != null && abandonBtn.Visible)
             {
-                SpireBridgeMod.Log("start_run: Abandoning existing run first");
+                BroadcastProgress("abandoning_existing_run");
                 abandonBtn.ForceClick();
                 await WaitFor(() => NModalContainer.Instance?.OpenModal != null, 5000);
 
@@ -72,23 +82,24 @@ public static class RunActions
                     var yesBtn = modal.GetNodeOrNull<NButton>("VerticalPopup/YesButton");
                     if (yesBtn != null) yesBtn.ForceClick();
                     await WaitFor(() => NModalContainer.Instance?.OpenModal == null, 5000);
+                    await Task.Delay(500);
                 }
             }
 
             // Click singleplayer
+            BroadcastProgress("clicking_singleplayer");
             var spBtn = mainMenu.GetNodeOrNull<NButton>("MainMenuTextButtons/SingleplayerButton");
             if (spBtn == null)
             {
-                SpireBridgeMod.Log("start_run: SingleplayerButton not found");
-                _navigating = false;
+                BroadcastProgress("error", "SingleplayerButton not found");
                 return;
             }
             spBtn.ForceClick();
             await Task.Delay(500);
 
-            // Check for standard run submenu vs direct character select
-            var charSelect = mainMenu.GetNodeOrNull<Control>("Submenus/CharacterSelectScreen");
-            var standardBtn = mainMenu.GetNodeOrNull<NButton>("Submenus/SingleplayerSubmenu/StandardButton");
+            // Wait for either character select or standard run submenu
+            Control? charSelect = null;
+            NButton? standardBtn = null;
 
             await WaitFor(() =>
             {
@@ -99,20 +110,20 @@ public static class RunActions
 
             if (standardBtn?.Visible == true && !(charSelect?.Visible == true))
             {
-                SpireBridgeMod.Log("start_run: Clicking Standard Run");
+                BroadcastProgress("clicking_standard_run");
                 standardBtn.ForceClick();
                 await WaitFor(() => mainMenu.GetNodeOrNull<Control>("Submenus/CharacterSelectScreen")?.Visible ?? false, 5000);
                 charSelect = mainMenu.GetNodeOrNull<Control>("Submenus/CharacterSelectScreen");
             }
 
-            if (charSelect == null)
+            if (charSelect == null || !charSelect.Visible)
             {
-                SpireBridgeMod.Log("start_run: CharacterSelectScreen not found");
-                _navigating = false;
+                BroadcastProgress("error", "CharacterSelectScreen not found");
                 return;
             }
 
             // Select character
+            BroadcastProgress("selecting_character", characterId);
             var btnContainer = charSelect.GetNodeOrNull<Node>("CharSelectButtons/ButtonContainer");
             if (btnContainer != null)
             {
@@ -126,25 +137,57 @@ public static class RunActions
 
                 if (target != null)
                 {
-                    SpireBridgeMod.Log($"start_run: Selecting character {target.Character?.Id}");
+                    SpireBridgeMod.Log($"start_run: Found character {target.Character?.Id}");
                     target.Select();
-                    await Task.Delay(200);
+                    await Task.Delay(300);
+                }
+                else
+                {
+                    BroadcastProgress("warning", $"Character '{characterId}' not found, using default");
                 }
             }
 
-            // Click confirm
+            // Set ascension if requested
+            if (ascension >= 0)
+            {
+                var ascPanel = charSelect.GetNodeOrNull<NAscensionPanel>("%AscensionPanel");
+                if (ascPanel != null)
+                {
+                    BroadcastProgress("setting_ascension", ascension.ToString());
+                    ascPanel.SetAscensionLevel(ascension);
+                    await Task.Delay(200);
+                }
+                else
+                {
+                    BroadcastProgress("warning", "AscensionPanel not found");
+                }
+            }
+
+            // Click confirm/embark
+            BroadcastProgress("confirming");
             var confirmBtn = charSelect.GetNodeOrNull<NButton>("ConfirmButton");
             if (confirmBtn != null)
             {
-                SpireBridgeMod.Log("start_run: Confirming character");
                 confirmBtn.ForceClick();
             }
+            else
+            {
+                BroadcastProgress("error", "ConfirmButton not found");
+                return;
+            }
 
-            SpireBridgeMod.Log("start_run: Complete");
+            // Wait for run to actually start (main menu disappears)
+            await WaitFor(() =>
+            {
+                var mm = root.GetNodeOrNull<Control>("/root/Game/RootSceneContainer/MainMenu");
+                return mm == null || !mm.Visible;
+            }, 10000);
+
+            BroadcastProgress("complete", characterId);
         }
         catch (Exception ex)
         {
-            SpireBridgeMod.Log($"start_run error: {ex.Message}");
+            BroadcastProgress("error", ex.Message);
         }
         finally
         {
@@ -159,6 +202,34 @@ public static class RunActions
             var tree = (SceneTree)Engine.GetMainLoop();
             var root = tree.Root;
 
+            // Check if we're on main menu with a saved run
+            var mainMenu = root.GetNodeOrNull<Control>("/root/Game/RootSceneContainer/MainMenu");
+            if (mainMenu != null && mainMenu.Visible)
+            {
+                var abandonBtn = mainMenu.GetNodeOrNull<NButton>("MainMenuTextButtons/AbandonRunButton");
+                if (abandonBtn != null && abandonBtn.Visible)
+                {
+                    SpireBridgeMod.Log("abandon_run: Abandoning from main menu");
+                    abandonBtn.ForceClick();
+                    await WaitFor(() => NModalContainer.Instance?.OpenModal != null, 5000);
+
+                    if (NModalContainer.Instance?.OpenModal is Node modal)
+                    {
+                        var yesBtn = modal.GetNodeOrNull<NButton>("VerticalPopup/YesButton");
+                        if (yesBtn != null)
+                        {
+                            yesBtn.ForceClick();
+                            await WaitFor(() => NModalContainer.Instance?.OpenModal == null, 5000);
+                        }
+                    }
+                    SpireBridgeMod.Log("abandon_run: Complete (from main menu)");
+                    return;
+                }
+
+                SpireBridgeMod.Log("abandon_run: On main menu but no run to abandon");
+                return;
+            }
+
             // In-run: click options → abandon → confirm
             var optionsBtn = root.GetNodeOrNull<NButton>("/root/Game/RootSceneContainer/Run/GlobalUi/TopBar/RightAlignedStuff/Options");
             if (optionsBtn != null)
@@ -167,12 +238,12 @@ public static class RunActions
                 optionsBtn.ForceClick();
                 await Task.Delay(500);
 
-                var abandonBtn = root.GetNodeOrNull<NButton>("/root/Game/RootSceneContainer/Run/GlobalUi/CapstoneScreenContainer/OptionsScreen/AbandonRunButton");
-                if (abandonBtn != null)
+                var abandonRunBtn = root.GetNodeOrNull<NButton>("/root/Game/RootSceneContainer/Run/GlobalUi/CapstoneScreenContainer/OptionsScreen/AbandonRunButton");
+                if (abandonRunBtn != null)
                 {
-                    await WaitFor(() => abandonBtn.IsVisibleInTree(), 3000);
+                    await WaitFor(() => abandonRunBtn.IsVisibleInTree(), 3000);
                     SpireBridgeMod.Log("abandon_run: Clicking Abandon");
-                    abandonBtn.ForceClick();
+                    abandonRunBtn.ForceClick();
                     await Task.Delay(500);
 
                     var proceedBtn = root.GetNodeOrNull<NButton>("/root/Game/RootSceneContainer/Run/GlobalUi/OverlayScreensContainer/GameOverScreen/UI/ProceedButton");
@@ -183,6 +254,10 @@ public static class RunActions
                         proceedBtn.ForceClick();
                     }
                 }
+            }
+            else
+            {
+                SpireBridgeMod.Log("abandon_run: Not in a run and not on main menu");
             }
 
             SpireBridgeMod.Log("abandon_run: Complete");

@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using System.Text.Json;
+using System.Threading.Tasks;
 using MegaCrit.Sts2.Core.Combat;
 using MegaCrit.Sts2.Core.Commands;
 using MegaCrit.Sts2.Core.Context;
@@ -8,6 +9,7 @@ using MegaCrit.Sts2.Core.Entities.Cards;
 using MegaCrit.Sts2.Core.Entities.Creatures;
 using MegaCrit.Sts2.Core.Entities.Players;
 using MegaCrit.Sts2.Core.GameActions.Multiplayer;
+using MegaCrit.Sts2.Core.Helpers;
 using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.Runs;
 
@@ -88,14 +90,29 @@ public static class CombatActions
                 return CommandHandler.Error("no_target", "No valid target for targeted card");
         }
 
-        // Play the card
-        _ = CardCmd.AutoPlay(new BlockingPlayerChoiceContext(), card, target);
+        // Spend energy/resources first (AutoPlay skips this — it's designed for AutoSlayer which uses cheats)
+        // Then play the card via TaskHelper.RunSafely
+        TaskHelper.RunSafely(PlayCardWithResources(card, target));
 
         return CommandHandler.Ok("play", new
         {
             card = card.Id.Entry,
             target = target?.Name
         });
+    }
+
+    private static async Task PlayCardWithResources(CardModel card, Creature? target)
+    {
+        var (energySpent, starsSpent) = await card.SpendResources();
+        var resources = new ResourceInfo
+        {
+            EnergySpent = energySpent,
+            EnergyValue = energySpent,
+            StarsSpent = starsSpent,
+            StarValue = starsSpent
+        };
+        var choiceContext = new BlockingPlayerChoiceContext();
+        await card.OnPlayWrapper(choiceContext, target, isAutoPlay: false, resources);
     }
 
     public static string EndTurn()

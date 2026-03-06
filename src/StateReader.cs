@@ -75,7 +75,8 @@ public static class StateReader
         }
 
         // Card reward choices
-        if (state["screen"]?.ToString() == "card_reward" || state["screen"]?.ToString() == "card_select")
+        var screenStr = state["screen"]?.ToString() ?? "";
+        if (screenStr == "card_reward" || screenStr == "card_select" || screenStr.Contains("select") || screenStr.Contains("transform"))
         {
             state["card_choices"] = BuildCardChoices();
         }

@@ -142,7 +142,7 @@ public static class ScreenActions
                 return CommandHandler.Error("wrong_screen", "No card selection screen open");
 
             var overlayType = overlay.GetType().Name;
-            if (!overlayType.Contains("Card") && !overlayType.Contains("Reward"))
+            if (!overlayType.Contains("Card") && !overlayType.Contains("Reward") && !overlayType.Contains("Deck") && !overlayType.Contains("Select"))
                 return CommandHandler.Error("wrong_screen", $"Not on a card selection screen (current: {overlayType})");
 
             Node searchRoot = overlayNode;
@@ -163,6 +163,36 @@ public static class ScreenActions
                 var holder = gridHolders[index];
                 SpireBridgeMod.Log($"choose_card: clicking grid holder {index}, card={holder.CardModel?.Id}");
                 holder.EmitSignal(NCardHolder.SignalName.Pressed, holder);
+
+                // For NCardGridSelectionScreen (card removal, transform), auto-confirm after selection
+                if (overlay is NCardGridSelectionScreen gridScreen)
+                {
+                    // Schedule confirm after a short delay to let preview animation play
+                    SpireBridgeMod.ScheduleAction(0.5f, () =>
+                    {
+                        try
+                        {
+                            var confirmBtn = ((Node)gridScreen).GetNodeOrNull<NConfirmButton>("%PreviewConfirm");
+                            if (confirmBtn != null && confirmBtn.IsVisibleInTree() && confirmBtn.IsEnabled)
+                            {
+                                confirmBtn.ForceClick();
+                                SpireBridgeMod.Log("choose_card: auto-confirmed deck selection");
+                            }
+                            else
+                            {
+                                // Try the other confirm button
+                                confirmBtn = ((Node)gridScreen).GetNodeOrNull<NConfirmButton>("%Confirm");
+                                if (confirmBtn != null && confirmBtn.IsVisibleInTree() && confirmBtn.IsEnabled)
+                                {
+                                    confirmBtn.ForceClick();
+                                    SpireBridgeMod.Log("choose_card: auto-confirmed via %Confirm button");
+                                }
+                            }
+                        }
+                        catch (Exception ex) { SpireBridgeMod.Log($"choose_card: auto-confirm failed: {ex.Message}"); }
+                    });
+                }
+
                 return CommandHandler.Ok("choose_card", new { index, count = gridHolders.Count, card = holder.CardModel?.Id?.ToString() });
             }
 

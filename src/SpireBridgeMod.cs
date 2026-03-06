@@ -193,6 +193,24 @@ public static class SpireBridgeMod
         }
     }
 
+    /// <summary>Schedule an action to run on the main thread after a delay.</summary>
+    public static void ScheduleAction(float delaySec, Action action)
+    {
+        var tree = (SceneTree)Engine.GetMainLoop();
+        var timer = new Godot.Timer();
+        timer.WaitTime = delaySec;
+        timer.OneShot = true;
+        timer.Timeout += () =>
+        {
+            try { action(); }
+            catch (Exception ex) { Log($"ScheduleAction error: {ex.Message}"); }
+            timer.QueueFree();
+        };
+        tree.Root.CallDeferred("add_child", timer);
+        // Start after added to tree
+        timer.CallDeferred("start");
+    }
+
     internal static void Log(string msg)
     {
         GD.Print($"[SpireBridge] {msg}");
