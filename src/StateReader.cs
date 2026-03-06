@@ -16,6 +16,8 @@ using MegaCrit.Sts2.Core.Nodes.Screens.Overlays;
 using MegaCrit.Sts2.Core.AutoSlay.Helpers;
 using MegaCrit.Sts2.Core.Nodes.Cards.Holders;
 using MegaCrit.Sts2.Core.Runs;
+using MegaCrit.Sts2.Core.Nodes;
+using MegaCrit.Sts2.Core.Nodes.RestSite;
 
 namespace SpireBridge;
 
@@ -32,7 +34,11 @@ public static class StateReader
             return CommandHandler.Ok("get_state", new
             {
                 screen = "main_menu",
-                in_run = false
+                in_run = false,
+                available_actions = new List<Dictionary<string, object?>>
+                {
+                    new() { ["action"] = "start_run", ["description"] = "Start a new run" }
+                }
             });
         }
 
@@ -74,6 +80,12 @@ public static class StateReader
             state["rewards"] = BuildRewardsInfo();
         }
 
+        // Rest site info
+        if (state["screen"]?.ToString() == "rest_site")
+        {
+            state["rest_site"] = BuildRestSiteInfo();
+        }
+
         // Card reward choices
         var screenStr = state["screen"]?.ToString() ?? "";
         if (screenStr == "card_reward" || screenStr == "card_select" || screenStr.Contains("select") || screenStr.Contains("transform"))
@@ -84,6 +96,9 @@ public static class StateReader
         // Sequence number for staleness detection
         state["seq"] = GameEventBridge.CurrentSeq;
 
+        // Available actions for the agent
+        state["available_actions"] = BuildAvailableActions(state);
+
         return CommandHandler.Ok("get_state", state);
     }
 
@@ -93,6 +108,29 @@ public static class StateReader
             return "game_over";
         if (CombatManager.Instance.IsInProgress)
             return "combat";
+
+        // Check room types BEFORE map (rooms are visible while map reports IsOpen)
+        try
+        {
+            var nRun = NRun.Instance;
+            if (nRun != null)
+            {
+                var restRoom = nRun.RestSiteRoom;
+                if (restRoom != null && ((Control)restRoom).IsVisibleInTree())
+                {
+                    // Check if proceed button is showing (option already chosen)
+                    var proceedBtn = restRoom.ProceedButton;
+                    if (proceedBtn == null || !proceedBtn.IsEnabled)
+                        return "rest_site";
+                    // Proceed button showing = rest complete, fall through to map check
+                }
+                if (nRun.MerchantRoom != null && ((Control)nRun.MerchantRoom).IsVisibleInTree())
+                    return "shop";
+                if (nRun.TreasureRoom != null && ((Control)nRun.TreasureRoom).IsVisibleInTree())
+                    return "treasure";
+            }
+        }
+        catch { }
 
         // Check if map screen is open FIRST — it takes priority even over overlays
         // (rewards overlay stays in tree during close animation, but map is already open)
@@ -108,7 +146,7 @@ public static class StateReader
                     {
                         var typeName = overlay.GetType().Name;
                         // Only card reward/selection overlays take priority over map
-                        if (typeName.Contains("CardSelection") || typeName.Contains("CardSelect"))
+                        if (typeName.Contains("CardSelection") || typeName.Contains("CardSelect") || typeName.Contains("SelectScreen") || typeName.Contains("Enchant") || typeName.Contains("Transform"))
                             return "card_select";
                         if (typeName.Contains("Reward") && typeName.Contains("Card"))
                             return "card_reward";
@@ -137,7 +175,7 @@ public static class StateReader
                     return "event";
                 if (typeName.Contains("RestSite") || typeName.Contains("Campfire"))
                     return "rest_site";
-                if (typeName.Contains("CardSelection") || typeName.Contains("CardSelect"))
+                if (typeName.Contains("CardSelection") || typeName.Contains("CardSelect") || typeName.Contains("SelectScreen") || typeName.Contains("Enchant") || typeName.Contains("Transform"))
                     return "card_select";
                 if (typeName.Contains("GameOver"))
                     return "game_over";
@@ -393,6 +431,43 @@ public static class StateReader
         };
     }
 
+    private static Dictionary<string, object?> BuildRestSiteInfo()
+    {
+        var info = new Dictionary<string, object?>();
+        var options = new List<Dictionary<string, object?>>();
+
+        try
+        {
+            var restRoom = NRun.Instance?.RestSiteRoom;
+            if (restRoom != null)
+            {
+                var choicesContainer = ((Node)restRoom).GetNodeOrNull<Control>("%ChoicesContainer");
+                if (choicesContainer != null)
+                {
+                    int idx = 0;
+                    foreach (var child in choicesContainer.GetChildren())
+                    {
+                        if (child is NRestSiteButton btn)
+                        {
+                            options.Add(new Dictionary<string, object?>
+                            {
+                                ["index"] = idx,
+                                ["id"] = btn.Option.OptionId,
+                                ["name"] = btn.Option.Title.GetFormattedText(),
+                                ["description"] = btn.Option.Description.GetFormattedText()
+                            });
+                            idx++;
+                        }
+                    }
+                }
+            }
+        }
+        catch (Exception ex) { SpireBridgeMod.Log($"BuildRestSiteInfo error: {ex.Message}"); }
+
+        info["options"] = options;
+        return info;
+    }
+
     private static List<Dictionary<string, object?>> BuildCardChoices()
     {
         var choices = new List<Dictionary<string, object?>>();
@@ -431,21 +506,303 @@ public static class StateReader
         };
 
         // Only show playability in combat
-        try
-        {
-            info["can_play"] = card.CanPlay();
-        }
+        try { info["can_play"] = card.CanPlay(); }
         catch { info["can_play"] = null; }
+
+        // Description (resolve dynamic vars like damage/block values)
+        try 
+        { 
+            var desc = card.Description;
+            card.DynamicVars.AddTo(desc);
+            info["description"] = desc.GetFormattedText(); 
+        }
+        catch { info["description"] = null; }
+
+        // Damage
+        try { info["damage"] = card.DynamicVars.ContainsKey("Damage") ? (int)card.DynamicVars.Damage.BaseValue : null; }
+        catch { info["damage"] = null; }
+
+        // Block
+        try { info["block"] = card.DynamicVars.ContainsKey("Block") ? (int)card.DynamicVars.Block.BaseValue : null; }
+        catch { info["block"] = null; }
+
+        // Rarity
+        try { info["rarity"] = card.Rarity.ToString(); }
+        catch { info["rarity"] = null; }
+
+        // Upgraded
+        try { info["upgraded"] = card.IsUpgraded; }
+        catch { info["upgraded"] = null; }
 
         return info;
     }
 
     private static Dictionary<string, object?> SerializePower(MegaCrit.Sts2.Core.Models.PowerModel power)
     {
-        return new Dictionary<string, object?>
+        var info = new Dictionary<string, object?>
         {
             ["id"] = power.Id.Entry,
             ["amount"] = power.Amount
         };
+
+        try { info["name"] = power.Title.GetFormattedText(); }
+        catch { info["name"] = null; }
+
+        try { info["type"] = power.Type.ToString(); }
+        catch { info["type"] = null; }
+
+        return info;
+    }
+
+    private static List<Dictionary<string, object?>> BuildAvailableActions(Dictionary<string, object?> state)
+    {
+        var actions = new List<Dictionary<string, object?>>();
+        var screen = state["screen"]?.ToString() ?? "";
+
+        try
+        {
+            switch (screen)
+            {
+                case "combat":
+                    BuildCombatActions(state, actions);
+                    break;
+                case "map":
+                    BuildMapActions(state, actions);
+                    break;
+                case "rewards":
+                    BuildRewardActions(state, actions);
+                    break;
+                case "card_reward":
+                    BuildCardRewardActions(state, actions);
+                    break;
+                case "card_select":
+                    BuildCardSelectActions(state, actions);
+                    break;
+                case "event":
+                    BuildEventActions(state, actions);
+                    break;
+                case "rest_site":
+                    BuildRestSiteActions(state, actions);
+                    break;
+                case "game_over":
+                    actions.Add(new Dictionary<string, object?> { ["action"] = "start_run", ["description"] = "Start a new run" });
+                    break;
+                case "main_menu":
+                    actions.Add(new Dictionary<string, object?> { ["action"] = "start_run", ["description"] = "Start a new run" });
+                    break;
+            }
+        }
+        catch (Exception ex)
+        {
+            SpireBridgeMod.Log($"BuildAvailableActions error: {ex.Message}");
+        }
+
+        return actions;
+    }
+
+    private static void BuildCombatActions(Dictionary<string, object?> state, List<Dictionary<string, object?>> actions)
+    {
+        try
+        {
+            var combat = state["combat"] as Dictionary<string, object?>;
+            if (combat == null) return;
+            var isPlayerTurn = combat["is_player_turn"] as bool? ?? false;
+            if (!isPlayerTurn) return;
+
+            var enemyIndices = new List<int>();
+            try
+            {
+                if (combat["enemies"] is IEnumerable<object> enemyList)
+                    foreach (var e in enemyList)
+                        if (e is Dictionary<string, object?> ed)
+                            try { enemyIndices.Add((int)(ed["index"] ?? 0)); } catch { }
+            }
+            catch { }
+
+            // Hand cards
+            try
+            {
+                var player = state["player"] as Dictionary<string, object?>;
+                if (player?["hand"] is IEnumerable<object> hand)
+                {
+                    int idx = 0;
+                    foreach (var c in hand)
+                    {
+                        if (c is Dictionary<string, object?> card)
+                        {
+                            var canPlay = card["can_play"] as bool? ?? false;
+                            if (canPlay)
+                            {
+                                var cardId = card["id"]?.ToString() ?? "?";
+                                var targetType = card["target_type"]?.ToString() ?? "";
+                                var desc = $"Play {cardId}";
+                                try
+                                {
+                                    if (card["damage"] != null) desc += $" ({card["damage"]} dmg)";
+                                    if (card["block"] != null) desc += $" ({card["block"]} block)";
+                                }
+                                catch { }
+
+                                var action = new Dictionary<string, object?>
+                                {
+                                    ["action"] = "play",
+                                    ["card"] = idx,
+                                    ["description"] = desc
+                                };
+                                if (targetType == "AnyEnemy")
+                                    action["targets"] = enemyIndices;
+                                actions.Add(action);
+                            }
+                        }
+                        idx++;
+                    }
+                }
+            }
+            catch { }
+
+            actions.Add(new Dictionary<string, object?> { ["action"] = "end_turn", ["description"] = "End your turn" });
+
+            // Potions
+            try
+            {
+                var player = state["player"] as Dictionary<string, object?>;
+                if (player?["potions"] is IEnumerable<object> potions)
+                {
+                    foreach (var p in potions)
+                    {
+                        if (p is Dictionary<string, object?> potion)
+                        {
+                            var canUse = potion["can_use"] as bool? ?? false;
+                            if (canUse)
+                            {
+                                var action = new Dictionary<string, object?>
+                                {
+                                    ["action"] = "use_potion",
+                                    ["index"] = potion["slot"],
+                                    ["description"] = $"Use potion {potion["id"]}"
+                                };
+                                if (potion["target_type"]?.ToString() == "AnyEnemy")
+                                    action["targets"] = enemyIndices;
+                                actions.Add(action);
+                            }
+                        }
+                    }
+                }
+            }
+            catch { }
+        }
+        catch { }
+    }
+
+    private static void BuildMapActions(Dictionary<string, object?> state, List<Dictionary<string, object?>> actions)
+    {
+        try
+        {
+            var map = state["map"] as Dictionary<string, object?>;
+            if (map?["available_nodes"] is IEnumerable<object> nodes)
+                foreach (var n in nodes)
+                    if (n is Dictionary<string, object?> node)
+                        actions.Add(new Dictionary<string, object?>
+                        {
+                            ["action"] = "choose_node",
+                            ["row"] = node["row"],
+                            ["col"] = node["col"],
+                            ["type"] = node["type"],
+                            ["description"] = $"Go to {node["type"]} at row {node["row"]}, col {node["col"]}"
+                        });
+        }
+        catch { }
+    }
+
+    private static void BuildRewardActions(Dictionary<string, object?> state, List<Dictionary<string, object?>> actions)
+    {
+        try
+        {
+            if (state["rewards"] is IEnumerable<object> rewards)
+                foreach (var r in rewards)
+                    if (r is Dictionary<string, object?> reward)
+                        actions.Add(new Dictionary<string, object?>
+                        {
+                            ["action"] = "choose_reward",
+                            ["index"] = reward["index"],
+                            ["type"] = reward["type"],
+                            ["description"] = $"Take {reward["type"]}"
+                        });
+            actions.Add(new Dictionary<string, object?> { ["action"] = "proceed", ["description"] = "Skip remaining rewards and proceed" });
+        }
+        catch { }
+    }
+
+    private static void BuildCardRewardActions(Dictionary<string, object?> state, List<Dictionary<string, object?>> actions)
+    {
+        try
+        {
+            if (state["card_choices"] is IEnumerable<object> cards)
+                foreach (var c in cards)
+                    if (c is Dictionary<string, object?> card)
+                        actions.Add(new Dictionary<string, object?>
+                        {
+                            ["action"] = "choose_card",
+                            ["index"] = card["index"],
+                            ["card_id"] = card["id"],
+                            ["description"] = $"Add {card["id"]} to deck"
+                        });
+            actions.Add(new Dictionary<string, object?> { ["action"] = "skip", ["description"] = "Skip card reward" });
+        }
+        catch { }
+    }
+
+    private static void BuildCardSelectActions(Dictionary<string, object?> state, List<Dictionary<string, object?>> actions)
+    {
+        try
+        {
+            if (state["card_choices"] is IEnumerable<object> cards)
+                foreach (var c in cards)
+                    if (c is Dictionary<string, object?> card)
+                        actions.Add(new Dictionary<string, object?>
+                        {
+                            ["action"] = "choose_card",
+                            ["index"] = card["index"],
+                            ["card_id"] = card["id"],
+                            ["description"] = $"Select {card["id"]}"
+                        });
+        }
+        catch { }
+    }
+
+    private static void BuildEventActions(Dictionary<string, object?> state, List<Dictionary<string, object?>> actions)
+    {
+        try
+        {
+            if (state["event"] is Dictionary<string, object?> evt && evt["options"] is IEnumerable<object> options)
+                foreach (var o in options)
+                    if (o is Dictionary<string, object?> opt)
+                        actions.Add(new Dictionary<string, object?>
+                        {
+                            ["action"] = "choose_option",
+                            ["index"] = opt["index"],
+                            ["text"] = opt["text"],
+                            ["description"] = $"Choose: {opt["text"]}"
+                        });
+        }
+        catch { }
+    }
+
+    private static void BuildRestSiteActions(Dictionary<string, object?> state, List<Dictionary<string, object?>> actions)
+    {
+        try
+        {
+            if (state["rest_site"] is Dictionary<string, object?> rest && rest["options"] is IEnumerable<object> options)
+                foreach (var o in options)
+                    if (o is Dictionary<string, object?> opt)
+                        actions.Add(new Dictionary<string, object?>
+                        {
+                            ["action"] = "choose_rest_option",
+                            ["index"] = opt["index"],
+                            ["id"] = opt["id"],
+                            ["description"] = $"{opt["name"]} - {opt["description"]}"
+                        });
+        }
+        catch { }
     }
 }

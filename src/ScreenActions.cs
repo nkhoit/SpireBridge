@@ -13,6 +13,7 @@ using MegaCrit.Sts2.Core.Nodes.Screens.CardSelection;
 using MegaCrit.Sts2.Core.Nodes.Screens.Overlays;
 using MegaCrit.Sts2.Core.Nodes.Rewards;
 using MegaCrit.Sts2.Core.Rewards;
+using MegaCrit.Sts2.Core.Nodes.RestSite;
 
 namespace SpireBridge;
 
@@ -69,6 +70,41 @@ public static class ScreenActions
         }
 
         return CommandHandler.Error("no_confirm", "No enabled confirm button found");
+    }
+
+    /// <summary>Choose a rest site option by index (rest, smith, etc.).</summary>
+    public static string ChooseRestOption(JsonElement request)
+    {
+        if (!request.TryGetProperty("index", out var indexEl))
+            return CommandHandler.Error("missing_param", "choose_rest_option requires 'index'");
+
+        int index = indexEl.GetInt32();
+
+        try
+        {
+            var restRoom = NRun.Instance?.RestSiteRoom;
+            if (restRoom == null)
+                return CommandHandler.Error("no_rest_site", "Not at a rest site");
+
+            var choicesContainer = ((Node)restRoom).GetNodeOrNull<Control>("%ChoicesContainer");
+            if (choicesContainer == null)
+                return CommandHandler.Error("no_choices", "Rest site choices container not found");
+
+            var buttons = choicesContainer.GetChildren().OfType<NRestSiteButton>().ToList();
+            if (index < 0 || index >= buttons.Count)
+                return CommandHandler.Error("invalid_index", $"Rest option index {index} out of range (available: {buttons.Count})");
+
+            var btn = buttons[index];
+            var optionId = btn.Option.OptionId;
+            SpireBridgeMod.Log($"choose_rest_option: clicking {optionId} (index {index})");
+            btn.ForceClick();
+
+            return CommandHandler.Ok("choose_rest_option", new { index, option_id = optionId });
+        }
+        catch (Exception ex)
+        {
+            return CommandHandler.Error("error", $"Rest option error: {ex.Message}");
+        }
     }
 
     public static string Proceed()

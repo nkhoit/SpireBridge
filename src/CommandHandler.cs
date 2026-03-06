@@ -48,6 +48,7 @@ public static class CommandHandler
                     "choose_reward" => ScreenActions.ChooseReward(doc.RootElement),
                     "proceed" => ScreenActions.Proceed(),
                     "confirm" => ScreenActions.Confirm(),
+                    "choose_rest_option" => ScreenActions.ChooseRestOption(doc.RootElement),
                     "start_run" => RunActions.StartRun(doc.RootElement),
                     "abandon_run" => RunActions.AbandonRun(),
                     "debug_tree" => DebugTree(doc.RootElement),

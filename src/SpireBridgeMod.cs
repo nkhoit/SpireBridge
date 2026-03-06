@@ -197,18 +197,17 @@ public static class SpireBridgeMod
     public static void ScheduleAction(float delaySec, Action action)
     {
         var tree = (SceneTree)Engine.GetMainLoop();
-        var timer = new Godot.Timer();
-        timer.WaitTime = delaySec;
-        timer.OneShot = true;
-        timer.Timeout += () =>
+        // Use SceneTree.CreateTimer which is more reliable than manually creating Timer nodes
+        var sceneTimer = tree.CreateTimer(delaySec);
+        sceneTimer.Timeout += () =>
         {
-            try { action(); }
+            try 
+            { 
+                Log($"ScheduleAction: timer fired after {delaySec}s");
+                action(); 
+            }
             catch (Exception ex) { Log($"ScheduleAction error: {ex.Message}"); }
-            timer.QueueFree();
         };
-        tree.Root.CallDeferred("add_child", timer);
-        // Start after added to tree
-        timer.CallDeferred("start");
     }
 
     internal static void Log(string msg)
