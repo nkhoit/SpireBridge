@@ -59,11 +59,18 @@ public static class MapActions
 
             var mapScreen = nRun.GlobalUi.MapScreen;
             var mapPoints = FindAll<NMapPoint>(mapScreen);
+            SpireBridgeMod.Log($"choose_node: found {mapPoints.Count} map points, looking for ({row},{col})");
             var targetNMapPoint = mapPoints.FirstOrDefault(mp => mp.Point.coord.row == row && mp.Point.coord.col == col);
 
             if (targetNMapPoint == null)
+            {
+                // Log available points for debugging
+                foreach (var mp in mapPoints)
+                    SpireBridgeMod.Log($"  available: ({mp.Point.coord.row},{mp.Point.coord.col}) {mp.Point.PointType}");
                 return CommandHandler.Error("node_not_found", $"Map point UI element at ({row}, {col}) not found");
+            }
 
+            SpireBridgeMod.Log($"choose_node: clicking ({row},{col}) type={targetNMapPoint.Point.PointType}");
             // Use ForceClick like AutoSlayer does (NMapPoint → NButton → NClickableControl)
             targetNMapPoint.ForceClick();
         }

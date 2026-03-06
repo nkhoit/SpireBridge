@@ -37,6 +37,40 @@ public static class ScreenActions
     {
         return _attemptedRewardIds.Contains(((GodotObject)btn).GetInstanceId());
     }
+
+    /// <summary>Click any visible confirm button on the current overlay.</summary>
+    public static string Confirm()
+    {
+        var overlay = NOverlayStack.Instance?.Peek();
+        if (overlay == null)
+            return CommandHandler.Error("no_overlay", "No overlay screen open");
+
+        var node = (Node)overlay;
+        // Try common confirm button paths
+        string[] paths = { "%PreviewConfirm", "%Confirm", "ConfirmButton" };
+        foreach (var path in paths)
+        {
+            var btn = node.GetNodeOrNull<NConfirmButton>(path);
+            if (btn != null && btn.IsVisibleInTree() && btn.IsEnabled)
+            {
+                btn.ForceClick();
+                SpireBridgeMod.Log($"confirm: clicked {path}");
+                return CommandHandler.Ok("confirm", new { button = path });
+            }
+        }
+
+        // Fallback: find any NConfirmButton
+        var buttons = FindAll<NConfirmButton>(node).Where(b => b.IsVisibleInTree() && b.IsEnabled).ToList();
+        if (buttons.Count > 0)
+        {
+            buttons[0].ForceClick();
+            SpireBridgeMod.Log($"confirm: clicked fallback NConfirmButton");
+            return CommandHandler.Ok("confirm", new { button = "fallback" });
+        }
+
+        return CommandHandler.Error("no_confirm", "No enabled confirm button found");
+    }
+
     public static string Proceed()
     {
         try
@@ -162,30 +196,31 @@ public static class ScreenActions
 
                 var holder = gridHolders[index];
                 SpireBridgeMod.Log($"choose_card: clicking grid holder {index}, card={holder.CardModel?.Id}");
+                // Emit Pressed signal directly (NCardHolder.Pressed is what screens listen for)
+                // ForceClick on hitbox emits Released which doesn't trigger card selection
                 holder.EmitSignal(NCardHolder.SignalName.Pressed, holder);
+                SpireBridgeMod.Log("choose_card: emitted Pressed signal");
 
                 // For NCardGridSelectionScreen (card removal, transform), auto-confirm after selection
                 if (overlay is NCardGridSelectionScreen gridScreen)
                 {
+                    SpireBridgeMod.Log("choose_card: scheduling auto-confirm");
                     // Schedule confirm after a short delay to let preview animation play
-                    SpireBridgeMod.ScheduleAction(0.5f, () =>
+                    SpireBridgeMod.ScheduleAction(0.8f, () =>
                     {
                         try
                         {
-                            var confirmBtn = ((Node)gridScreen).GetNodeOrNull<NConfirmButton>("%PreviewConfirm");
-                            if (confirmBtn != null && confirmBtn.IsVisibleInTree() && confirmBtn.IsEnabled)
+                            // Find any visible+enabled confirm button in the overlay
+                            var allConfirm = FindAll<NConfirmButton>((Node)gridScreen);
+                            SpireBridgeMod.Log($"choose_card: found {allConfirm.Count} confirm buttons");
+                            foreach (var btn in allConfirm)
                             {
-                                confirmBtn.ForceClick();
-                                SpireBridgeMod.Log("choose_card: auto-confirmed deck selection");
-                            }
-                            else
-                            {
-                                // Try the other confirm button
-                                confirmBtn = ((Node)gridScreen).GetNodeOrNull<NConfirmButton>("%Confirm");
-                                if (confirmBtn != null && confirmBtn.IsVisibleInTree() && confirmBtn.IsEnabled)
+                                SpireBridgeMod.Log($"  confirm btn: {btn.Name} visible={btn.IsVisibleInTree()} enabled={btn.IsEnabled}");
+                                if (btn.IsVisibleInTree() && btn.IsEnabled)
                                 {
-                                    confirmBtn.ForceClick();
-                                    SpireBridgeMod.Log("choose_card: auto-confirmed via %Confirm button");
+                                    btn.ForceClick();
+                                    SpireBridgeMod.Log($"choose_card: auto-confirmed via {btn.Name}");
+                                    break;
                                 }
                             }
                         }

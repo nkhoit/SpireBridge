@@ -8,6 +8,7 @@ using MegaCrit.Sts2.Core.Nodes;
 using MegaCrit.Sts2.Core.Nodes.CommonUi;
 using MegaCrit.Sts2.Core.Nodes.GodotExtensions;
 using MegaCrit.Sts2.Core.Nodes.Screens.CharacterSelect;
+using MegaCrit.Sts2.Core.Nodes.Screens.Overlays;
 
 namespace SpireBridge;
 
@@ -60,6 +61,25 @@ public static class RunActions
         {
             var tree = (SceneTree)Engine.GetMainLoop();
             var root = tree.Root;
+
+            // Handle game over screen — click MainMenuButton to return to main menu
+            var gameOver = root.GetNodeOrNull<Control>("/root/Game/RootSceneContainer/Run");
+            if (gameOver != null)
+            {
+                // Check if we're on game over by looking for NGameOverScreen overlay
+                var overlay = NOverlayStack.Instance?.Peek();
+                if (overlay != null && overlay.GetType().Name == "NGameOverScreen")
+                {
+                    BroadcastProgress("dismissing_game_over");
+                    var mmBtn = ((Node)overlay).GetNodeOrNull<NButton>("%MainMenuButton");
+                    if (mmBtn != null)
+                    {
+                        mmBtn.ForceClick();
+                        // Wait for main menu to appear
+                        await Task.Delay(3000);
+                    }
+                }
+            }
 
             // Find main menu
             var mainMenu = root.GetNodeOrNull<Control>("/root/Game/RootSceneContainer/MainMenu");
