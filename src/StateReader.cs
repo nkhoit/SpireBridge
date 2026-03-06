@@ -319,7 +319,7 @@ public static class StateReader
                     ["is_proceed"] = btn.Option?.IsProceed ?? false,
                 };
                 // Try to get label text
-                try { opt["text"] = btn.Option?.Description?.ToString() ?? btn.Option?.TextKey ?? ""; } catch { }
+                try { opt["text"] = btn.Option?.Description?.GetFormattedText() ?? btn.Option?.TextKey ?? ""; } catch { opt["text"] = ""; }
                 try { opt["event_id"] = btn.Event?.Id?.Entry; } catch { }
                 options.Add(opt);
             }
