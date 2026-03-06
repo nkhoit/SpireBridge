@@ -8,6 +8,7 @@ using MegaCrit.Sts2.Core.Nodes.Cards.Holders;
 using MegaCrit.Sts2.Core.Nodes.CommonUi;
 using MegaCrit.Sts2.Core.Nodes.Events;
 using MegaCrit.Sts2.Core.Nodes.GodotExtensions;
+using MegaCrit.Sts2.Core.Nodes.Rooms;
 using MegaCrit.Sts2.Core.Nodes.Screens;
 using MegaCrit.Sts2.Core.Nodes.Screens.CardSelection;
 using MegaCrit.Sts2.Core.Nodes.Screens.Overlays;
@@ -96,8 +97,9 @@ public static class ScreenActions
 
             var btn = buttons[index];
             var optionId = btn.Option.OptionId;
-            SpireBridgeMod.Log($"choose_rest_option: clicking {optionId} (index {index})");
+            SpireBridgeMod.Log($"choose_rest_option: clicking {optionId} (index {index}), _isUnclickable={btn.Get("_isUnclickable")}");
             btn.ForceClick();
+            SpireBridgeMod.Log($"choose_rest_option: ForceClick completed for {optionId}");
 
             return CommandHandler.Ok("choose_rest_option", new { index, option_id = optionId });
         }
@@ -128,6 +130,37 @@ public static class ScreenActions
             var proceedButtons = FindAll<NProceedButton>(searchRoot);
             SpireBridgeMod.Log($"proceed: found {proceedButtons.Count} buttons");
             var enabledButton = proceedButtons.FirstOrDefault(b => b.IsVisibleInTree() && b.IsEnabled);
+            
+            // Fallback: check room proceed buttons directly (shops, treasure, etc.)
+            if (enabledButton == null)
+            {
+                try
+                {
+                    var nRun = NRun.Instance;
+                    if (nRun != null)
+                    {
+                        IRoomWithProceedButton? room = null;
+                        if (nRun.MerchantRoom != null && ((Control)nRun.MerchantRoom).IsVisibleInTree())
+                            room = nRun.MerchantRoom;
+                        else if (nRun.TreasureRoom != null && ((Control)nRun.TreasureRoom).IsVisibleInTree())
+                            room = nRun.TreasureRoom;
+                        else if (nRun.RestSiteRoom != null && ((Control)nRun.RestSiteRoom).IsVisibleInTree())
+                            room = nRun.RestSiteRoom;
+                        
+                        if (room?.ProceedButton != null)
+                        {
+                            var btn = room.ProceedButton;
+                            SpireBridgeMod.Log($"proceed: room button IsEnabled={btn.IsEnabled} IsVisible={btn.IsVisibleInTree()}");
+                            if (btn.IsVisibleInTree())
+                            {
+                                enabledButton = btn;
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex2) { SpireBridgeMod.Log($"proceed: room fallback error: {ex2.Message}"); }
+            }
+            
             if (enabledButton != null)
             {
                 SpireBridgeMod.Log($"proceed: clicking {enabledButton.Name}");

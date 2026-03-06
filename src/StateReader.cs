@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Godot;
 using MegaCrit.Sts2.Core.Combat;
 using MegaCrit.Sts2.Core.Context;
@@ -26,6 +27,12 @@ namespace SpireBridge;
 /// </summary>
 public static class StateReader
 {
+    private static readonly Regex BbCodeRegex = new(@"\[/?[a-zA-Z_][^\]]*\]", RegexOptions.Compiled);
+    
+    public static string StripBBCode(string text)
+    {
+        return BbCodeRegex.Replace(text, "");
+    }
     public static string GetFullState()
     {
         var runState = RunManager.Instance.DebugOnlyGetState();
@@ -121,13 +128,38 @@ public static class StateReader
                     // Check if proceed button is showing (option already chosen)
                     var proceedBtn = restRoom.ProceedButton;
                     if (proceedBtn == null || !proceedBtn.IsEnabled)
-                        return "rest_site";
+                    {
+                        // Check if an overlay (card select for smith) is on top
+                        var restOverlay = NOverlayStack.Instance?.Peek();
+                        if (restOverlay != null && restOverlay is CanvasItem restOv && restOv.IsInsideTree() && restOv.IsVisibleInTree())
+                        {
+                            var restOvType = restOverlay.GetType().Name;
+                            if (restOvType.Contains("Select") || restOvType.Contains("Upgrade") || restOvType.Contains("Card"))
+                            {
+                                // Fall through to overlay check below
+                            }
+                            else
+                            {
+                                return "rest_site";
+                            }
+                        }
+                        else
+                        {
+                            return "rest_site";
+                        }
+                    }
                     // Proceed button showing = rest complete, fall through to map check
                 }
                 if (nRun.MerchantRoom != null && ((Control)nRun.MerchantRoom).IsVisibleInTree())
-                    return "shop";
+                {
+                    if (NMapScreen.Instance?.IsOpen != true)
+                        return "shop";
+                }
                 if (nRun.TreasureRoom != null && ((Control)nRun.TreasureRoom).IsVisibleInTree())
-                    return "treasure";
+                {
+                    if (NMapScreen.Instance?.IsOpen != true)
+                        return "treasure";
+                }
             }
         }
         catch { }
@@ -358,7 +390,7 @@ public static class StateReader
                     ["is_proceed"] = btn.Option?.IsProceed ?? false,
                 };
                 // Try to get label text
-                try { opt["text"] = btn.Option?.Description?.GetFormattedText() ?? btn.Option?.TextKey ?? ""; } catch { opt["text"] = ""; }
+                try { opt["text"] = StripBBCode(btn.Option?.Description?.GetFormattedText() ?? btn.Option?.TextKey ?? ""); } catch { opt["text"] = ""; }
                 try { opt["event_id"] = btn.Event?.Id?.Entry; } catch { }
                 options.Add(opt);
             }
@@ -453,8 +485,8 @@ public static class StateReader
                             {
                                 ["index"] = idx,
                                 ["id"] = btn.Option.OptionId,
-                                ["name"] = btn.Option.Title.GetFormattedText(),
-                                ["description"] = btn.Option.Description.GetFormattedText()
+                                ["name"] = StripBBCode(btn.Option.Title.GetFormattedText()),
+                                ["description"] = StripBBCode(btn.Option.Description.GetFormattedText())
                             });
                             idx++;
                         }
@@ -514,7 +546,7 @@ public static class StateReader
         { 
             var desc = card.Description;
             card.DynamicVars.AddTo(desc);
-            info["description"] = desc.GetFormattedText(); 
+            info["description"] = StripBBCode(desc.GetFormattedText()); 
         }
         catch { info["description"] = null; }
 
@@ -545,7 +577,7 @@ public static class StateReader
             ["amount"] = power.Amount
         };
 
-        try { info["name"] = power.Title.GetFormattedText(); }
+        try { info["name"] = StripBBCode(power.Title.GetFormattedText()); }
         catch { info["name"] = null; }
 
         try { info["type"] = power.Type.ToString(); }
@@ -696,11 +728,12 @@ public static class StateReader
                                 var action = new Dictionary<string, object?>
                                 {
                                     ["action"] = "use_potion",
-                                    ["index"] = potion["slot"],
+                                    ["potion_index"] = potion["slot"],
                                     ["description"] = $"Use potion {potion["id"]}"
                                 };
                                 if (potion["target_type"]?.ToString() == "AnyEnemy")
                                     action["targets"] = enemyIndices;
+                                    // Agent should pass target_index when using
                                 actions.Add(action);
                             }
                         }
