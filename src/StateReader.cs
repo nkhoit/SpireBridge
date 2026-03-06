@@ -13,6 +13,8 @@ using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.MonsterMoves.Intents;
 using MegaCrit.Sts2.Core.Nodes.Screens.Map;
 using MegaCrit.Sts2.Core.Nodes.Screens.Overlays;
+using MegaCrit.Sts2.Core.AutoSlay.Helpers;
+using MegaCrit.Sts2.Core.Nodes.Cards.Holders;
 using MegaCrit.Sts2.Core.Runs;
 
 namespace SpireBridge;
@@ -70,6 +72,12 @@ public static class StateReader
         if (state["screen"]?.ToString() == "rewards")
         {
             state["rewards"] = BuildRewardsInfo();
+        }
+
+        // Card reward choices
+        if (state["screen"]?.ToString() == "card_reward" || state["screen"]?.ToString() == "card_select")
+        {
+            state["card_choices"] = BuildCardChoices();
         }
 
         // Sequence number for staleness detection
@@ -382,6 +390,33 @@ public static class StateReader
             ["col"] = point.coord.col,
             ["type"] = point.PointType.ToString()
         };
+    }
+
+    private static List<Dictionary<string, object?>> BuildCardChoices()
+    {
+        var choices = new List<Dictionary<string, object?>>();
+        try
+        {
+            var overlay = NOverlayStack.Instance?.Peek();
+            if (overlay == null) return choices;
+
+            var holders = UiHelper.FindAll<NGridCardHolder>((Node)overlay);
+            int idx = 0;
+            foreach (var holder in holders)
+            {
+                if (holder.CardModel != null)
+                {
+                    var card = SerializeCard(holder.CardModel);
+                    card["index"] = idx++;
+                    choices.Add(card);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            SpireBridgeMod.Log($"Error building card choices: {ex.Message}");
+        }
+        return choices;
     }
 
     private static Dictionary<string, object?> SerializeCard(CardModel card)

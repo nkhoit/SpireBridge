@@ -76,50 +76,50 @@ public static class ScreenActions
     {
         try
         {
-            // Scope to overlay if available
-            Node searchRoot;
             var overlay = NOverlayStack.Instance?.Peek();
-            if (overlay is Node overlayNode && overlayNode.IsInsideTree())
-                searchRoot = overlayNode;
-            else
-                searchRoot = ((SceneTree)Engine.GetMainLoop()).Root;
+            if (overlay is not Node overlayNode || !overlayNode.IsInsideTree())
+                return CommandHandler.Error("no_overlay", "No overlay screen open to skip");
 
-            // Look for skip/bowl button on card reward screen
-            var skipButtons = FindAll<NButton>(searchRoot)
-                .Where(b => b.IsVisibleInTree() && b.IsEnabled &&
-                    (b.Name.ToString().Contains("Skip", StringComparison.OrdinalIgnoreCase) ||
-                     b.Name.ToString().Contains("Bowl", StringComparison.OrdinalIgnoreCase)))
-                .ToList();
-
-            if (skipButtons.Count > 0)
+            // For card reward screens, use the known RewardAlternatives container
+            if (overlay is NCardRewardSelectionScreen cardRewardScreen)
             {
-                skipButtons[0].ForceClick();
-                return CommandHandler.Ok("skip", new { clicked = skipButtons[0].Name.ToString() });
+                try
+                {
+                    var altContainer = overlayNode.GetNode<Control>("UI/RewardAlternatives");
+                    if (altContainer != null)
+                    {
+                        foreach (var child in altContainer.GetChildren())
+                        {
+                            if (child is NCardRewardAlternativeButton altBtn && altBtn.IsVisibleInTree() && altBtn.IsEnabled)
+                            {
+                                altBtn.ForceClick();
+                                return CommandHandler.Ok("skip", new { clicked = "alternative_button" });
+                            }
+                        }
+                    }
+                }
+                catch { /* fall through */ }
             }
 
-            // Fallback: try the card reward alternative button (singing bowl / skip)
-            var altButtons = FindAll<NCardRewardAlternativeButton>(searchRoot)
-                .Where(b => b.IsVisibleInTree() && b.IsEnabled)
-                .ToList();
-            if (altButtons.Count > 0)
+            // Generic fallback: walk overlay children safely for NButton with skip/close/back names
+            try
             {
-                altButtons[0].ForceClick();
-                return CommandHandler.Ok("skip", new { clicked = "alternative_button" });
+                foreach (var btn in SafeFindButtons(overlayNode))
+                {
+                    var name = btn.Name.ToString();
+                    if (name.Contains("Skip", StringComparison.OrdinalIgnoreCase) ||
+                        name.Contains("Bowl", StringComparison.OrdinalIgnoreCase) ||
+                        name.Contains("Close", StringComparison.OrdinalIgnoreCase) ||
+                        name.Contains("Back", StringComparison.OrdinalIgnoreCase))
+                    {
+                        btn.ForceClick();
+                        return CommandHandler.Ok("skip", new { clicked = name });
+                    }
+                }
             }
+            catch { /* tree traversal failed */ }
 
-            // Fallback: Close/Back button (for deck selection screens that can't be skipped)
-            var closeButtons = FindAll<NButton>(searchRoot)
-                .Where(b => b.IsVisibleInTree() && b.IsEnabled &&
-                    (b.Name.ToString().Contains("Close", StringComparison.OrdinalIgnoreCase) ||
-                     b.Name.ToString().Contains("Back", StringComparison.OrdinalIgnoreCase)))
-                .ToList();
-            if (closeButtons.Count > 0)
-            {
-                closeButtons[0].ForceClick();
-                return CommandHandler.Ok("skip", new { clicked = closeButtons[0].Name.ToString(), note = "used_close_button" });
-            }
-
-            return CommandHandler.Error("no_button", "No skip, close, or back button found");
+            return CommandHandler.Error("no_button", "No skip or close button found on overlay");
         }
         catch (Exception ex)
         {
@@ -273,5 +273,26 @@ public static class ScreenActions
         if (node is T t) results.Add(t);
         foreach (var child in node.GetChildren())
             FindAllRecursive(child, results);
+    }
+
+    /// <summary>Safely find NButton descendants, catching BadImageFormatException from problematic nodes.</summary>
+    private static List<NButton> SafeFindButtons(Node root)
+    {
+        var results = new List<NButton>();
+        SafeFindButtonsRecursive(root, results);
+        return results;
+    }
+
+    private static void SafeFindButtonsRecursive(Node node, List<NButton> results)
+    {
+        try
+        {
+            if (node is NButton btn && btn.IsVisibleInTree() && btn.IsEnabled)
+                results.Add(btn);
+            foreach (var child in node.GetChildren())
+                SafeFindButtonsRecursive(child, results);
+        }
+        catch (BadImageFormatException) { /* skip problematic subtree */ }
+        catch (TypeLoadException) { /* skip problematic subtree */ }
     }
 }
