@@ -693,6 +693,7 @@ public static class StateReader
             ["name"] = card.Title,
             ["type"] = card.Type.ToString(),
             ["cost"] = card.EnergyCost.GetResolved(),
+            ["is_x_cost"] = card.EnergyCost.CostsX,
             ["target_type"] = card.TargetType.ToString()
         };
 
@@ -724,6 +725,14 @@ public static class StateReader
         // Upgraded
         try { info["upgraded"] = card.IsUpgraded; }
         catch { info["upgraded"] = null; }
+
+        // Keywords
+        try
+        {
+            var kw = card.Keywords.Where(k => k != MegaCrit.Sts2.Core.Entities.Cards.CardKeyword.None).Select(k => k.ToString()).ToList();
+            if (kw.Count > 0) info["keywords"] = kw;
+        }
+        catch { }
 
         return info;
     }
