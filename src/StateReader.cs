@@ -367,17 +367,72 @@ public static class StateReader
             ["is_player_turn"] = cm.IsPlayPhase
         };
 
-        // Enemies
-        if (player?.PlayerCombatState != null)
+        // Enemies — try multiple access paths
+        try
         {
-            var combatState = player.Creature.CombatState;
-            if (combatState != null)
+            IEnumerable<Creature>? enemies = null;
+            CombatState? combatState = null;
+
+            // Path 1: player.Creature.CombatState.Enemies
+            if (player?.PlayerCombatState != null)
             {
-                combat["enemies"] = combatState.Enemies
+                combatState = player.Creature.CombatState;
+                if (combatState != null)
+                {
+                    enemies = combatState.Enemies;
+                    SpireBridgeMod.Log($"BuildCombatState: Path 1 (player.Creature.CombatState) — {enemies?.Count() ?? 0} enemies");
+                }
+            }
+
+            // Path 2: CombatManager enemies via combat state
+            if (enemies == null || !enemies.Any())
+            {
+                try
+                {
+                    var cmState = cm.GetType().GetProperty("CombatState")?.GetValue(cm) as CombatState;
+                    if (cmState != null)
+                    {
+                        combatState = cmState;
+                        enemies = cmState.Enemies;
+                        SpireBridgeMod.Log($"BuildCombatState: Path 2 (CombatManager.CombatState) — {enemies?.Count() ?? 0} enemies");
+                    }
+                }
+                catch (Exception ex2) { SpireBridgeMod.Log($"BuildCombatState: Path 2 failed: {ex2.Message}"); }
+            }
+
+            // Path 3: Try Allies property to confirm CombatState access works
+            if (enemies == null || !enemies.Any())
+            {
+                try
+                {
+                    if (combatState != null)
+                    {
+                        // Log what properties CombatState has for debugging
+                        var props = combatState.GetType().GetProperties().Select(p => p.Name).ToList();
+                        SpireBridgeMod.Log($"BuildCombatState: CombatState properties: {string.Join(", ", props)}");
+                    }
+                }
+                catch (Exception ex3) { SpireBridgeMod.Log($"BuildCombatState: Path 3 failed: {ex3.Message}"); }
+            }
+
+            if (enemies != null && combatState != null)
+            {
+                combat["enemies"] = enemies
                     .Where(e => e.IsAlive)
                     .Select((e, i) => SerializeEnemy(e, i, combatState))
                     .ToList();
             }
+            else
+            {
+                SpireBridgeMod.Log("BuildCombatState: No enemies found via any path");
+                combat["enemies"] = new List<Dictionary<string, object?>>();
+            }
+        }
+        catch (Exception ex)
+        {
+            SpireBridgeMod.Log($"BuildCombatState error: {ex.Message}\n{ex.StackTrace}");
+            combat["enemies"] = new List<Dictionary<string, object?>>();
+            combat["error"] = ex.Message;
         }
 
         return combat;
