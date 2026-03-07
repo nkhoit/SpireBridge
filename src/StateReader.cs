@@ -817,12 +817,7 @@ public static class StateReader
         catch { info["can_play"] = null; }
 
         // Description (resolve dynamic vars like damage/block values)
-        try 
-        { 
-            var desc = card.Description;
-            card.DynamicVars.AddTo(desc);
-            info["description"] = StripBBCode(desc.GetFormattedText()); 
-        }
+        try { info["description"] = SerializeCardDescription(card); }
         catch { info["description"] = null; }
 
         // Damage
