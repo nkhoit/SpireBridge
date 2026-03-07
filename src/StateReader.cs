@@ -282,15 +282,17 @@ public static class StateReader
             ["gold"] = player.Gold,
             ["max_energy"] = player.MaxEnergy,
             ["deck"] = player.Deck.Cards.Select(SerializeCard).ToList(),
-            ["relics"] = player.Relics.Select(r => new Dictionary<string, object?>
-            {
-                ["id"] = r.Id.Entry,
-                ["name"] = r.Id.Entry // Title requires localization context
+            ["relics"] = player.Relics.Select(r => {
+                var info = new Dictionary<string, object?> { ["id"] = r.Id.Entry };
+                try { info["name"] = StripBBCode(r.Title?.GetFormattedText() ?? r.Id.Entry); } catch { info["name"] = r.Id.Entry; }
+                try { info["description"] = StripBBCode(r.DynamicDescription?.GetFormattedText() ?? ""); } catch { info["description"] = ""; }
+                return info;
             }).ToList(),
             ["potions"] = player.PotionSlots.Select((p, i) => p == null ? null : new Dictionary<string, object?>
             {
                 ["slot"] = i,
                 ["id"] = p.Id.Entry,
+                ["name"] = StripBBCode(p.Title?.GetFormattedText() ?? p.Id.Entry),
                 ["can_use"] = CombatManager.Instance.IsInProgress,
                 ["target_type"] = p.TargetType.ToString()
             }).ToList()
@@ -608,7 +610,7 @@ public static class StateReader
                     ["type"] = "relic",
                     ["id"] = relic.Id.Entry,
                     ["name"] = StripBBCode(relic.Title?.GetFormattedText() ?? relic.Id.Entry),
-                    ["description"] = StripBBCode(relic.Description?.GetFormattedText() ?? ""),
+                    ["description"] = StripBBCode(relic.DynamicDescription?.GetFormattedText() ?? ""),
                     ["cost"] = entry.Cost,
                     ["affordable"] = entry.EnoughGold,
                 });
@@ -687,6 +689,7 @@ public static class StateReader
         var info = new Dictionary<string, object?>
         {
             ["id"] = card.Id.Entry,
+            ["name"] = card.Title,
             ["type"] = card.Type.ToString(),
             ["cost"] = card.EnergyCost.GetResolved(),
             ["target_type"] = card.TargetType.ToString()
@@ -994,7 +997,7 @@ public static class StateReader
                             ["action"] = "choose_card",
                             ["index"] = card["index"],
                             ["card_id"] = card["id"],
-                            ["description"] = $"Select {card["id"]}"
+                            ["description"] = $"Select {card.GetValueOrDefault("name", card["id"])}"
                         });
         }
         catch { }
