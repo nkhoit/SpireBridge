@@ -34,7 +34,12 @@ public static class StateReader
     
     public static string StripBBCode(string text)
     {
-        return BbCodeRegex.Replace(text, "");
+        text = BbCodeRegex.Replace(text, "");
+        // Strip resource paths like res://images/packed/sprite_fonts/ironclad_energy_icon.png
+        text = System.Text.RegularExpressions.Regex.Replace(text, @"res://[^\s]+", "");
+        // Clean up whitespace
+        text = System.Text.RegularExpressions.Regex.Replace(text, @"\s+", " ").Trim();
+        return text;
     }
 
     private static string SerializeCardDescription(CardModel card)
@@ -712,6 +717,7 @@ public static class StateReader
                     ["category"] = "colorless",
                     ["id"] = card.Id.Entry,
                     ["name"] = StripBBCode(card.Title),
+                    ["description"] = SerializeCardDescription(card),
                     ["cost"] = entry.Cost,
                     ["affordable"] = entry.EnoughGold,
                     ["rarity"] = card.Rarity.ToString(),
@@ -750,6 +756,7 @@ public static class StateReader
                     ["type"] = "potion",
                     ["id"] = potion.Id.Entry,
                     ["name"] = StripBBCode(potion.Title?.GetFormattedText() ?? potion.Id.Entry),
+                    ["description"] = StripBBCode(potion.DynamicDescription?.GetFormattedText() ?? ""),
                     ["cost"] = entry.Cost,
                     ["affordable"] = entry.EnoughGold,
                 });
