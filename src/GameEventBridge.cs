@@ -35,12 +35,10 @@ public static class GameEventBridge
         RunManager.Instance.RoomExited += () => DebouncePush("room_exited");
         RunManager.Instance.ActEntered += () => DebouncePush("act_entered");
 
-        // Combat
+        // Combat — skip turn_started/turn_ended (fire before cards are dealt/cleared)
         CombatManager.Instance.CombatSetUp += _ => DebouncePush("combat_start");
         CombatManager.Instance.CombatWon += _ => DebouncePush("combat_won");
         CombatManager.Instance.CombatEnded += _ => DebouncePush("combat_ended");
-        CombatManager.Instance.TurnStarted += _ => DebouncePush("turn_started");
-        CombatManager.Instance.TurnEnded += _ => DebouncePush("turn_ended");
 
         // Overlay changes (rewards, events, card selection, etc.)
         if (NOverlayStack.Instance != null)
