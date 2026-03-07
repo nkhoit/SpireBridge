@@ -857,10 +857,10 @@ public static class StateReader
         {
             try
             {
-                var preview = card.GetDescriptionForUpgradePreview();
-                if (preview != null)
+                var previewText = card.GetDescriptionForUpgradePreview();
+                if (previewText != null)
                 {
-                    var previewText = StripBBCode(preview.GetFormattedText());
+                    previewText = StripBBCode(previewText);
                     previewText = System.Text.RegularExpressions.Regex.Replace(previewText, @"\{[^}]+\}", "");
                     previewText = System.Text.RegularExpressions.Regex.Replace(previewText, @"\s+", " ").Trim();
                     if (previewText.Length > 0)
