@@ -67,14 +67,32 @@ public static class StateReader
         var runState = RunManager.Instance.DebugOnlyGetState();
         if (runState == null)
         {
+            var menuActions = new List<Dictionary<string, object?>>();
+            
+            // Check for continue/abandon buttons
+            try
+            {
+                var root = ((SceneTree)Engine.GetMainLoop()).Root;
+                var mm = root.GetNodeOrNull<Control>("/root/Game/RootSceneContainer/MainMenu");
+                if (mm != null)
+                {
+                    var continueBtn = mm.GetNodeOrNull<NButton>("MainMenuTextButtons/ContinueButton");
+                    if (continueBtn != null && continueBtn.Visible && continueBtn.IsEnabled)
+                        menuActions.Add(new() { ["action"] = "continue_run", ["description"] = "Continue existing run" });
+                    var abandonBtn = mm.GetNodeOrNull<NButton>("MainMenuTextButtons/AbandonRunButton");
+                    if (abandonBtn != null && abandonBtn.Visible)
+                        menuActions.Add(new() { ["action"] = "abandon_run", ["description"] = "Abandon current run" });
+                }
+            }
+            catch { }
+            
+            menuActions.Add(new() { ["action"] = "start_run", ["description"] = "Start a new run" });
+
             return CommandHandler.Ok("get_state", new
             {
                 screen = "main_menu",
                 in_run = false,
-                available_actions = new List<Dictionary<string, object?>>
-                {
-                    new() { ["action"] = "start_run", ["description"] = "Start a new run" }
-                }
+                available_actions = menuActions
             });
         }
 
@@ -933,8 +951,22 @@ public static class StateReader
                     {
                         var root = ((SceneTree)Engine.GetMainLoop()).Root;
                         var mm = root.GetNodeOrNull<Control>("/root/Game/RootSceneContainer/MainMenu");
+                        SpireBridgeMod.Log($"MainMenu node: {(mm != null ? "found" : "null")}");
                         if (mm != null)
                         {
+                            // Debug: log all children recursively up to 2 levels
+                            foreach (var child in mm.GetChildren())
+                            {
+                                SpireBridgeMod.Log($"  MainMenu child: {child.Name} type={child.GetType().Name}");
+                                if (child is Node n)
+                                {
+                                    foreach (var grandchild in n.GetChildren())
+                                    {
+                                        SpireBridgeMod.Log($"    -> {grandchild.Name} type={grandchild.GetType().Name}");
+                                    }
+                                }
+                            }
+
                             var continueBtn = mm.GetNodeOrNull<NButton>("MainMenuTextButtons/ContinueButton");
                             if (continueBtn != null && continueBtn.Visible && continueBtn.IsEnabled)
                                 actions.Add(new Dictionary<string, object?> { ["action"] = "continue_run", ["description"] = "Continue existing run" });
