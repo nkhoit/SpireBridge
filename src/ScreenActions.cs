@@ -449,11 +449,67 @@ public static class ScreenActions
 
             SpireBridgeMod.Log("open_chest: clicking chest button");
             chestBtn.ForceClick();
+
+            // Schedule auto-collection of relics after chest animation
+            SpireBridgeMod.ScheduleAction(1.0f, () =>
+            {
+                try
+                {
+                    var relicCollection = ((Node)treasureRoom).GetNodeOrNull<Node>("%RelicCollection");
+                    if (relicCollection == null) return;
+
+                    var holders = MapActions.FindAll<NButton>(relicCollection);
+                    foreach (var holder in holders)
+                    {
+                        if (holder.IsVisibleInTree() && holder.IsEnabled && holder.GetType().Name.Contains("RelicHolder"))
+                        {
+                            SpireBridgeMod.Log($"open_chest: auto-collecting relic from {holder.Name}");
+                            holder.ForceClick();
+                        }
+                    }
+                }
+                catch (Exception ex2)
+                {
+                    SpireBridgeMod.Log($"open_chest: auto-collect error: {ex2.Message}");
+                }
+            });
+
             return CommandHandler.Ok("open_chest", new { opened = true });
         }
         catch (Exception ex)
         {
             return CommandHandler.Error("error", $"Open chest error: {ex.Message}");
+        }
+    }
+
+    public static string CollectRelic(JsonElement request)
+    {
+        try
+        {
+            var treasureRoom = NRun.Instance?.TreasureRoom;
+            if (treasureRoom == null)
+                return CommandHandler.Error("not_in_treasure", "Not in a treasure room");
+
+            var holderName = "SingleplayerRelicHolder";
+            if (request.TryGetProperty("holder_name", out var hn))
+                holderName = hn.GetString() ?? holderName;
+
+            var relicCollection = ((Node)treasureRoom).GetNodeOrNull<Node>("%RelicCollection");
+            if (relicCollection == null)
+                return CommandHandler.Error("no_collection", "RelicCollection not found");
+
+            var holders = MapActions.FindAll<NButton>(relicCollection);
+            var holder = holders.FirstOrDefault(h => h.Name == holderName && h.IsVisibleInTree() && h.IsEnabled);
+            if (holder == null)
+                return CommandHandler.Error("no_relic", $"No clickable relic holder '{holderName}' found");
+
+            SpireBridgeMod.Log($"collect_relic: clicking {holderName}");
+            holder.ForceClick();
+            return CommandHandler.Ok("collect_relic", new { collected = true, holder = holderName });
+        }
+        catch (Exception ex)
+        {
+            return CommandHandler.Error("error", $"Collect relic error: {ex.Message}");
         }
     }
 

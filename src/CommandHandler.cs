@@ -51,6 +51,7 @@ public static class CommandHandler
                     "choose_rest_option" => ScreenActions.ChooseRestOption(doc.RootElement),
                     "shop_buy" => ScreenActions.ShopBuy(doc.RootElement),
                     "open_chest" => ScreenActions.OpenChest(),
+                    "collect_relic" => ScreenActions.CollectRelic(doc.RootElement),
                     "start_run" => RunActions.StartRun(doc.RootElement),
                     "abandon_run" => RunActions.AbandonRun(),
                     "continue_run" => RunActions.ContinueRun(),

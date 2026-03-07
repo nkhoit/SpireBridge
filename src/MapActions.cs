@@ -75,6 +75,30 @@ public static class MapActions
             SpireBridgeMod.Log($"  IsEnabled: {targetNMapPoint.IsEnabled}");
             SpireBridgeMod.Log($"  MouseFilter: {targetNMapPoint.MouseFilter}");
             SpireBridgeMod.Log($"  MapScreen.IsOpen: {NMapScreen.Instance?.IsOpen}");
+            // Force-enable if disabled (map nodes can be temporarily disabled during transitions)
+            if (!targetNMapPoint.IsEnabled)
+            {
+                SpireBridgeMod.Log($"  Map point disabled, attempting to enable via reflection");
+                // Try to find and set the backing field for IsEnabled
+                var type = targetNMapPoint.GetType();
+                while (type != null)
+                {
+                    foreach (var field in type.GetFields(System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance))
+                    {
+                        if (field.Name.ToLower().Contains("enable") || field.Name.ToLower().Contains("disabled"))
+                            SpireBridgeMod.Log($"    Field: {field.DeclaringType?.Name}.{field.Name} = {field.GetValue(targetNMapPoint)}");
+                    }
+                    foreach (var prop in type.GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance))
+                    {
+                        if (prop.Name.ToLower().Contains("enable") || prop.Name.ToLower().Contains("disabled") || prop.Name.ToLower().Contains("interact"))
+                        {
+                            try { SpireBridgeMod.Log($"    Prop: {prop.DeclaringType?.Name}.{prop.Name} = {prop.GetValue(targetNMapPoint)} (canWrite={prop.CanWrite})"); }
+                            catch { SpireBridgeMod.Log($"    Prop: {prop.DeclaringType?.Name}.{prop.Name} (read failed)"); }
+                        }
+                    }
+                    type = type.BaseType;
+                }
+            }
             // Use ForceClick like AutoSlayer does (NMapPoint → NButton → NClickableControl)
             targetNMapPoint.ForceClick();
         }
@@ -87,7 +111,7 @@ public static class MapActions
     }
 
     /// <summary>Recursively find all nodes of type T.</summary>
-    private static System.Collections.Generic.List<T> FindAll<T>(Node root) where T : Node
+    internal static System.Collections.Generic.List<T> FindAll<T>(Node root) where T : Node
     {
         var results = new System.Collections.Generic.List<T>();
         FindAllRecursive(root, results);

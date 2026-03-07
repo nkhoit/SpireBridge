@@ -258,7 +258,22 @@ public static class StateReader
                 if (nRun.TreasureRoom != null && ((Control)nRun.TreasureRoom).IsVisibleInTree())
                 {
                     if (NMapScreen.Instance?.IsOpen != true)
+                    {
+                        // Check for rewards overlay on top of treasure room (appears after opening chest)
+                        try
+                        {
+                            var treasureOverlay = NOverlayStack.Instance?.Peek();
+                            if (treasureOverlay != null && treasureOverlay is CanvasItem tOv && tOv.IsInsideTree() && tOv.IsVisibleInTree())
+                            {
+                                var tOvType = treasureOverlay.GetType().Name;
+                                SpireBridgeMod.Log($"Treasure overlay detected: {tOvType}");
+                                if (tOvType.Contains("Reward"))
+                                    return "rewards";
+                            }
+                        }
+                        catch { }
                         return "treasure";
+                    }
                 }
 
                 // Event room — NRun.EventRoom is non-null only when _roomContainer.CurrentScene is NEventRoom
@@ -1089,6 +1104,46 @@ public static class StateReader
                             var cBtn = ((Node)tRoom).GetNodeOrNull<NButton>("%Chest");
                             if (cBtn != null && cBtn.IsEnabled)
                                 actions.Add(new Dictionary<string, object?> { ["action"] = "open_chest", ["description"] = "Open the treasure chest" });
+
+                            // Check for collectible relics (visible relic holders after chest is opened)
+                            var relicCollection = ((Node)tRoom).GetNodeOrNull<Node>("%RelicCollection");
+                            if (relicCollection != null)
+                            {
+                                var holders = MapActions.FindAll<NButton>(relicCollection);
+                                foreach (var holder in holders)
+                                {
+                                    if (holder.IsVisibleInTree() && holder.IsEnabled && holder.GetType().Name.Contains("RelicHolder"))
+                                    {
+                                        // Get the relic name from the NRelic child
+                                        var relicNode = holder.GetNodeOrNull<Node>("Relic");
+                                        var relicName = "Relic";
+                                        if (relicNode != null)
+                                        {
+                                            try
+                                            {
+                                                var modelProp = relicNode.GetType().GetProperty("Model");
+                                                if (modelProp != null)
+                                                {
+                                                    var model = modelProp.GetValue(relicNode);
+                                                    if (model != null)
+                                                    {
+                                                        var nameProp = model.GetType().GetProperty("Name") ?? model.GetType().GetProperty("Id");
+                                                        if (nameProp != null)
+                                                            relicName = nameProp.GetValue(model)?.ToString() ?? "Relic";
+                                                    }
+                                                }
+                                            }
+                                            catch { }
+                                        }
+                                        actions.Add(new Dictionary<string, object?>
+                                        {
+                                            ["action"] = "collect_relic",
+                                            ["holder_name"] = holder.Name,
+                                            ["description"] = $"Collect {relicName}"
+                                        });
+                                    }
+                                }
+                            }
                         }
                     } catch { }
                     actions.Add(new Dictionary<string, object?> { ["action"] = "proceed", ["description"] = "Leave treasure room" });
