@@ -54,6 +54,8 @@ public static class GameEventBridge
     /// Push a state update to all connected clients.
     /// Includes the full game state + event name + sequence number.
     /// </summary>
+    public static void PushState(string eventName) => Push(eventName);
+
     private static void Push(string eventName)
     {
         _seq++;

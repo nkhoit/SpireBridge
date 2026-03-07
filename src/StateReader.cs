@@ -289,8 +289,8 @@ public static class StateReader
         }
         catch { /* overlay stack may not exist */ }
 
-        // Check for event room (events are room-based, not overlays)
-        return "map";
+        // Nothing matched — return "unknown" so agents don't silently get stuck
+        return "unknown";
     }
 
     private static Dictionary<string, object?> BuildPlayerInfo(Player player)
@@ -869,6 +869,30 @@ public static class StateReader
                         }
                     } catch { }
                     actions.Add(new Dictionary<string, object?> { ["action"] = "proceed", ["description"] = "Leave treasure room" });
+                    break;
+                case "unknown":
+                    // Include debug info so agents/users can report what screen they're on
+                    try
+                    {
+                        var debugInfo = new List<string>();
+                        var tree3 = (SceneTree)Engine.GetMainLoop();
+                        var roomContainer = tree3.Root.GetNodeOrNull("/root/Game/RootSceneContainer/Run/RoomContainer");
+                        if (roomContainer != null)
+                        {
+                            foreach (var child in roomContainer.GetChildren())
+                            {
+                                if (child is CanvasItem ci && ci.IsVisibleInTree())
+                                    debugInfo.Add($"room:{child.GetType().Name}");
+                            }
+                        }
+                        var ov = NOverlayStack.Instance?.Peek();
+                        if (ov != null)
+                            debugInfo.Add($"overlay:{ov.GetType().Name}");
+                        if (debugInfo.Count > 0)
+                            actions.Add(new Dictionary<string, object?> { ["action"] = "debug", ["visible_nodes"] = debugInfo });
+                    }
+                    catch { }
+                    actions.Add(new Dictionary<string, object?> { ["action"] = "get_state", ["description"] = "Re-check state (screen may be transitioning)" });
                     break;
             }
         }

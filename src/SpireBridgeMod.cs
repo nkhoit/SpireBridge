@@ -5,7 +5,9 @@ using System.Text;
 using System.Text.Json;
 using System.Threading;
 using Godot;
+using MegaCrit.Sts2.Core.Combat;
 using MegaCrit.Sts2.Core.Modding;
+using MegaCrit.Sts2.Core.Runs;
 
 namespace SpireBridge;
 
@@ -40,22 +42,25 @@ public static class SpireBridgeMod
         tree.Root.CallDeferred("add_child", timer);
 
         Log("SpireBridge initialized. WebSocket server starting on port " + Port);
+    }
 
-        // Subscribe to game events for push-based state updates (deferred to ensure singletons exist)
-        tree.Root.CallDeferred("call_deferred", Callable.From(() =>
+    private static bool _gameEventsSubscribed;
+    
+    /// <summary>
+    /// Try to subscribe to game events. Called on each tick until successful.
+    /// </summary>
+    private static void TrySubscribeGameEvents()
+    {
+        if (_gameEventsSubscribed) return;
+        try
         {
-            // Delay subscription slightly to let game singletons initialize
-            var subscribeTimer = new Godot.Timer();
-            subscribeTimer.WaitTime = 2.0;
-            subscribeTimer.OneShot = true;
-            subscribeTimer.Timeout += () =>
+            if (CombatManager.Instance != null && RunManager.Instance != null)
             {
                 GameEventBridge.Subscribe();
-                subscribeTimer.QueueFree();
-            };
-            tree.Root.AddChild(subscribeTimer);
-            subscribeTimer.Start();
-        }));
+                _gameEventsSubscribed = true;
+            }
+        }
+        catch { /* singletons not ready yet */ }
     }
 
     private static void RunServer()
@@ -147,6 +152,8 @@ public static class SpireBridgeMod
     /// </summary>
     private static void ProcessPendingMessages()
     {
+        TrySubscribeGameEvents();
+        
         List<(WebSocket client, string message)> batch;
         lock (_pendingLock)
         {
