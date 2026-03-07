@@ -53,6 +53,7 @@ public static class CommandHandler
                     "open_chest" => ScreenActions.OpenChest(),
                     "start_run" => RunActions.StartRun(doc.RootElement),
                     "abandon_run" => RunActions.AbandonRun(),
+                    "continue_run" => RunActions.ContinueRun(),
                     "debug_tree" => DebugTree(doc.RootElement),
                     _ => Error("unknown_action", $"Unknown action: {action}")
                 };

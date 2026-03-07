@@ -48,6 +48,31 @@ public static class RunActions
         return CommandHandler.Ok("abandon_run", new { status = "abandoning" });
     }
 
+    public static string ContinueRun()
+    {
+        if (_navigating)
+            return CommandHandler.Error("busy", "Already navigating menus");
+
+        try
+        {
+            var root = ((SceneTree)Engine.GetMainLoop()).Root;
+            var mm = root.GetNodeOrNull<Control>("/root/Game/RootSceneContainer/MainMenu");
+            if (mm == null)
+                return CommandHandler.Error("no_menu", "Main menu not found");
+
+            var continueBtn = mm.GetNodeOrNull<NButton>("MainMenuTextButtons/ContinueButton");
+            if (continueBtn == null || !continueBtn.Visible || !continueBtn.IsEnabled)
+                return CommandHandler.Error("no_run", "No run to continue");
+
+            continueBtn.ForceClick();
+            return CommandHandler.Ok("continue_run", new { status = "continuing" });
+        }
+        catch (Exception ex)
+        {
+            return CommandHandler.Error("continue_failed", ex.Message);
+        }
+    }
+
     private static void BroadcastProgress(string step, string detail = "")
     {
         var msg = JsonSerializer.Serialize(new { @event = "run_progress", step, detail });

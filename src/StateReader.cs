@@ -928,6 +928,22 @@ public static class StateReader
                     actions.Add(new Dictionary<string, object?> { ["action"] = "start_run", ["description"] = "Start a new run (auto-dismisses post-run screens)" });
                     break;
                 case "main_menu":
+                    // Check if there's a run to continue/abandon
+                    try
+                    {
+                        var root = ((SceneTree)Engine.GetMainLoop()).Root;
+                        var mm = root.GetNodeOrNull<Control>("/root/Game/RootSceneContainer/MainMenu");
+                        if (mm != null)
+                        {
+                            var continueBtn = mm.GetNodeOrNull<NButton>("MainMenuTextButtons/ContinueButton");
+                            if (continueBtn != null && continueBtn.Visible && continueBtn.IsEnabled)
+                                actions.Add(new Dictionary<string, object?> { ["action"] = "continue_run", ["description"] = "Continue existing run" });
+                            var abandonBtn = mm.GetNodeOrNull<NButton>("MainMenuTextButtons/AbandonRunButton");
+                            if (abandonBtn != null && abandonBtn.Visible)
+                                actions.Add(new Dictionary<string, object?> { ["action"] = "abandon_run", ["description"] = "Abandon current run" });
+                        }
+                    }
+                    catch { }
                     actions.Add(new Dictionary<string, object?> { ["action"] = "start_run", ["description"] = "Start a new run" });
                     break;
                 case "shop":
