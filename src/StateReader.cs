@@ -940,6 +940,18 @@ public static class StateReader
         var actions = new List<Dictionary<string, object?>>();
         var screen = state["screen"]?.ToString() ?? "";
 
+        // Check for visible proceed button first
+        bool hasProceed = false;
+        try
+        {
+            var tree = ((SceneTree)Engine.GetMainLoop());
+            var proceedButtons = FindAll<NProceedButton>(tree.Root);
+            hasProceed = proceedButtons.Any(b => b.IsVisibleInTree() && b.IsEnabled);
+            if (hasProceed)
+                actions.Add(new Dictionary<string, object?> { ["action"] = "proceed", ["description"] = "Proceed" });
+        }
+        catch { }
+
         try
         {
             switch (screen)
@@ -948,7 +960,7 @@ public static class StateReader
                     BuildCombatActions(state, actions);
                     break;
                 case "map":
-                    BuildMapActions(state, actions);
+                    if (!hasProceed) BuildMapActions(state, actions);
                     break;
                 case "rewards":
                     BuildRewardActions(state, actions);
@@ -1082,19 +1094,6 @@ public static class StateReader
         {
             SpireBridgeMod.Log($"BuildAvailableActions error: {ex.Message}");
         }
-
-        // Generic proceed button detection — if visible and not already in actions
-        try
-        {
-            if (!actions.Any(a => a["action"]?.ToString() == "proceed"))
-            {
-                var tree = ((SceneTree)Engine.GetMainLoop());
-                var proceedButtons = FindAll<NProceedButton>(tree.Root);
-                if (proceedButtons.Any(b => b.IsVisibleInTree() && b.IsEnabled))
-                    actions.Add(new Dictionary<string, object?> { ["action"] = "proceed", ["description"] = "Proceed" });
-            }
-        }
-        catch { }
 
         // Discard potion available on any screen when potions exist
         try
