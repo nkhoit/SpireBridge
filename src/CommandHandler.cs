@@ -66,8 +66,8 @@ public static class CommandHandler
                         using var resultCheck = JsonDocument.Parse(result);
                         if (resultCheck.RootElement.TryGetProperty("status", out var statusEl) && statusEl.GetString() == "ok")
                         {
-                            // Delay push slightly to let game UI settle after the action
-                            SpireBridgeMod.ScheduleAction(0.3f, () => GameEventBridge.PushState($"action_{action}"));
+                            // Use debounced push — waits for game UI to settle
+                            GameEventBridge.DebouncePush($"action_{action}");
                         }
                     }
                     catch { }

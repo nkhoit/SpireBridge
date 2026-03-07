@@ -9,12 +9,17 @@ namespace SpireBridge;
 
 /// <summary>
 /// Subscribes to game events and pushes state updates to all connected WebSocket clients.
-/// Eliminates polling — agents get notified when things actually change.
+/// Uses debouncing: state only pushes after no changes for DebounceMs.
 /// </summary>
 public static class GameEventBridge
 {
     private static bool _subscribed;
     private static ulong _seq;
+    private static string? _pendingEvent;
+    private static ulong _debounceId;
+
+    /// <summary>Debounce window in seconds. State pushes after this much silence.</summary>
+    private const float DebounceSec = 0.5f;
 
     public static void Subscribe()
     {
@@ -22,60 +27,88 @@ public static class GameEventBridge
         _subscribed = true;
 
         // Run lifecycle
-        RunManager.Instance.RunStarted += _ => Push("run_started");
-        RunManager.Instance.RoomEntered += () => Push("room_entered");
-        RunManager.Instance.RoomExited += () => Push("room_exited");
-        RunManager.Instance.ActEntered += () => Push("act_entered");
+        RunManager.Instance.RunStarted += _ => DebouncePush("run_started");
+        RunManager.Instance.RoomEntered += () => DebouncePush("room_entered");
+        RunManager.Instance.RoomExited += () => DebouncePush("room_exited");
+        RunManager.Instance.ActEntered += () => DebouncePush("act_entered");
 
         // Combat
-        CombatManager.Instance.CombatSetUp += _ => Push("combat_start");
-        CombatManager.Instance.CombatWon += _ => Push("combat_won");
-        CombatManager.Instance.CombatEnded += _ => Push("combat_ended");
-        CombatManager.Instance.TurnStarted += _ => Push("turn_started");
-        CombatManager.Instance.TurnEnded += _ => Push("turn_ended");
+        CombatManager.Instance.CombatSetUp += _ => DebouncePush("combat_start");
+        CombatManager.Instance.CombatWon += _ => DebouncePush("combat_won");
+        CombatManager.Instance.CombatEnded += _ => DebouncePush("combat_ended");
+        CombatManager.Instance.TurnStarted += _ => DebouncePush("turn_started");
+        CombatManager.Instance.TurnEnded += _ => DebouncePush("turn_ended");
 
         // Overlay changes (rewards, events, card selection, etc.)
         if (NOverlayStack.Instance != null)
         {
             NOverlayStack.Instance.Changed += () =>
             {
-                // Reset reward tracking when a new rewards screen opens
                 var overlay = NOverlayStack.Instance?.Peek();
                 if (overlay?.GetType().Name == "NRewardsScreen")
                     ScreenActions.ResetRewardTracking();
-                Push("screen_changed");
+                DebouncePush("screen_changed");
             };
         }
 
-        SpireBridgeMod.Log("GameEventBridge subscribed to game events");
+        SpireBridgeMod.Log("GameEventBridge subscribed (debounce={DebounceSec}s)");
     }
 
     /// <summary>
-    /// Push a state update to all connected clients.
-    /// Includes the full game state + event name + sequence number.
+    /// Schedule a debounced state push. Resets the timer on each call.
+    /// The event name used is the latest one (most recent wins).
     /// </summary>
-    public static void PushState(string eventName) => Push(eventName);
-
-    private static void Push(string eventName)
+    public static void DebouncePush(string eventName)
     {
+        _pendingEvent = eventName;
+        _debounceId++;
+        var myId = _debounceId;
+        SpireBridgeMod.ScheduleAction(DebounceSec, () =>
+        {
+            // Only fire if no newer debounce has been scheduled
+            if (myId == _debounceId)
+                FlushPush();
+        });
+    }
+
+    /// <summary>
+    /// Immediately push state (bypasses debounce). Used for command responses
+    /// where we want the client to get state right away.
+    /// </summary>
+    public static void PushState(string eventName)
+    {
+        _pendingEvent = null;
+        _debounceId++; // Cancel any pending debounce
         _seq++;
         try
         {
             var stateJson = StateReader.GetFullState();
-            // Wrap state in an event envelope
             var envelope = $"{{\"type\":\"state_update\",\"event\":\"{eventName}\",\"seq\":{_seq},\"state\":{ExtractData(stateJson)}}}";
             SpireBridgeMod.BroadcastToClients(envelope);
         }
         catch (Exception ex)
         {
-            SpireBridgeMod.Log($"GameEventBridge.Push({eventName}) error: {ex.Message}");
+            SpireBridgeMod.Log($"GameEventBridge.PushState({eventName}) error: {ex.Message}");
         }
     }
 
-    /// <summary>
-    /// Extract just the "data" field from a CommandHandler.Ok response,
-    /// or return the whole thing if parsing fails.
-    /// </summary>
+    private static void FlushPush()
+    {
+        var evt = _pendingEvent ?? "debounced";
+        _pendingEvent = null;
+        _seq++;
+        try
+        {
+            var stateJson = StateReader.GetFullState();
+            var envelope = $"{{\"type\":\"state_update\",\"event\":\"{evt}\",\"seq\":{_seq},\"state\":{ExtractData(stateJson)}}}";
+            SpireBridgeMod.BroadcastToClients(envelope);
+        }
+        catch (Exception ex)
+        {
+            SpireBridgeMod.Log($"GameEventBridge.FlushPush({evt}) error: {ex.Message}");
+        }
+    }
+
     private static string ExtractData(string json)
     {
         try
