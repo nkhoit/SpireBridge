@@ -835,7 +835,8 @@ public static class StateReader
                     BuildRestSiteActions(state, actions);
                     break;
                 case "game_over":
-                    actions.Add(new Dictionary<string, object?> { ["action"] = "start_run", ["description"] = "Start a new run" });
+                    actions.Add(new Dictionary<string, object?> { ["action"] = "proceed", ["description"] = "Advance past game over / timeline screens" });
+                    actions.Add(new Dictionary<string, object?> { ["action"] = "start_run", ["description"] = "Start a new run (auto-dismisses post-run screens)" });
                     break;
                 case "main_menu":
                     actions.Add(new Dictionary<string, object?> { ["action"] = "start_run", ["description"] = "Start a new run" });

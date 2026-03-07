@@ -62,23 +62,65 @@ public static class RunActions
             var tree = (SceneTree)Engine.GetMainLoop();
             var root = tree.Root;
 
-            // Handle game over screen — click MainMenuButton to return to main menu
-            var gameOver = root.GetNodeOrNull<Control>("/root/Game/RootSceneContainer/Run");
-            if (gameOver != null)
+            // Handle game over / timeline / post-run screens
+            // Loop to click through any intermediate screens until main menu appears
+            for (int attempt = 0; attempt < 10; attempt++)
             {
-                // Check if we're on game over by looking for NGameOverScreen overlay
+                var mainMenuCheck = root.GetNodeOrNull<Control>("/root/Game/RootSceneContainer/MainMenu");
+                if (mainMenuCheck != null && mainMenuCheck.Visible)
+                    break; // Already at main menu
+
                 var overlay = NOverlayStack.Instance?.Peek();
-                if (overlay != null && overlay.GetType().Name == "NGameOverScreen")
+                if (overlay == null) break;
+
+                var overlayName = overlay.GetType().Name;
+                BroadcastProgress("dismissing_screen", overlayName);
+
+                if (overlayName == "NGameOverScreen")
                 {
-                    BroadcastProgress("dismissing_game_over");
+                    // Try MainMenuButton first, then ProceedButton
                     var mmBtn = ((Node)overlay).GetNodeOrNull<NButton>("%MainMenuButton");
-                    if (mmBtn != null)
+                    if (mmBtn != null && mmBtn.IsVisibleInTree() && mmBtn.IsEnabled)
                     {
                         mmBtn.ForceClick();
-                        // Wait for main menu to appear
-                        await Task.Delay(3000);
+                        await Task.Delay(2000);
+                        continue;
+                    }
+                    var procBtn = ((Node)overlay).GetNodeOrNull<NButton>("%ProceedButton");
+                    if (procBtn != null && procBtn.IsVisibleInTree() && procBtn.IsEnabled)
+                    {
+                        procBtn.ForceClick();
+                        await Task.Delay(2000);
+                        continue;
                     }
                 }
+
+                // Generic handler: find any proceed/continue/main-menu button on the overlay
+                var clickable = FindClickableButton((Node)overlay);
+                if (clickable != null)
+                {
+                    SpireBridgeMod.Log($"start_run: clicking {clickable.Name} on {overlayName}");
+                    clickable.ForceClick();
+                    await Task.Delay(2000);
+                    continue;
+                }
+
+                // Also check for non-overlay screens (timeline may not be an overlay)
+                var runNode = root.GetNodeOrNull<Control>("/root/Game/RootSceneContainer/Run");
+                if (runNode != null)
+                {
+                    var anyBtn = FindClickableButton(runNode, new[] { "ProceedButton", "ContinueButton", "MainMenuButton", "NextButton", "CloseButton", "ConfirmButton" });
+                    if (anyBtn != null)
+                    {
+                        SpireBridgeMod.Log($"start_run: clicking {anyBtn.Name} on Run tree");
+                        anyBtn.ForceClick();
+                        await Task.Delay(2000);
+                        continue;
+                    }
+                }
+
+                SpireBridgeMod.Log($"start_run: stuck on {overlayName}, no clickable button found");
+                break;
             }
 
             // Find main menu
@@ -314,5 +356,29 @@ public static class RunActions
         if (node is T t) results.Add(t);
         foreach (var child in node.GetChildren())
             FindAllRecursive(child, results);
+    }
+
+    /// <summary>Find an enabled, visible NButton by preferred names, or any proceed-like button.</summary>
+    private static NButton? FindClickableButton(Node root, string[]? preferredNames = null)
+    {
+        var allButtons = FindAll<NButton>(root);
+        var candidates = allButtons.Where(b => b.IsVisibleInTree() && b.IsEnabled).ToList();
+
+        var names = preferredNames ?? new[] { "ProceedButton", "ContinueButton", "MainMenuButton", "NextButton", "CloseButton", "ConfirmButton" };
+
+        // Try preferred names first
+        foreach (var name in names)
+        {
+            var match = candidates.FirstOrDefault(b =>
+                b.Name.ToString().Contains(name, StringComparison.OrdinalIgnoreCase));
+            if (match != null) return match;
+        }
+
+        // Fallback: any button whose name suggests progression
+        return candidates.FirstOrDefault(b =>
+        {
+            var n = b.Name.ToString().ToLowerInvariant();
+            return n.Contains("proceed") || n.Contains("continue") || n.Contains("next") || n.Contains("menu") || n.Contains("confirm");
+        });
     }
 }

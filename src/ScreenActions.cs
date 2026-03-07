@@ -167,6 +167,29 @@ public static class ScreenActions
                 enabledButton.ForceClick();
                 return CommandHandler.Ok("proceed", new { clicked = "proceed_button" });
             }
+
+            // Fallback: look for any NButton with progression-like name on overlays or game screens
+            try
+            {
+                var globalRoot = ((SceneTree)Engine.GetMainLoop()).Root;
+                var allButtons = FindAll<NButton>(searchRoot);
+                // Also check the full tree if scoped to overlay found nothing
+                if (allButtons.Count == 0 && searchRoot != globalRoot)
+                    allButtons = FindAll<NButton>(globalRoot);
+
+                var progressionNames = new[] { "proceed", "continue", "next", "mainmenu", "confirm", "close" };
+                var candidate = allButtons.FirstOrDefault(b =>
+                    b.IsVisibleInTree() && b.IsEnabled &&
+                    progressionNames.Any(n => b.Name.ToString().ToLowerInvariant().Contains(n)));
+                if (candidate != null)
+                {
+                    SpireBridgeMod.Log($"proceed: fallback clicking {candidate.Name} ({candidate.GetType().Name})");
+                    candidate.ForceClick();
+                    return CommandHandler.Ok("proceed", new { clicked = candidate.Name.ToString(), fallback = true });
+                }
+            }
+            catch (Exception ex3) { SpireBridgeMod.Log($"proceed: button fallback error: {ex3.Message}"); }
+
             return CommandHandler.Error("no_button", "No enabled proceed button found");
         }
         catch (Exception ex)
