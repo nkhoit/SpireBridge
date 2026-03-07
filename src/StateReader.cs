@@ -147,30 +147,42 @@ public static class StateReader
                 var restRoom = nRun.RestSiteRoom;
                 if (restRoom != null && ((Control)restRoom).IsVisibleInTree())
                 {
-                    // Check if proceed button is showing (option already chosen)
-                    var proceedBtn = restRoom.ProceedButton;
-                    if (proceedBtn == null || !proceedBtn.IsEnabled)
+                    // Always check for card select overlay first (Smith opens it async)
+                    var restOverlay = NOverlayStack.Instance?.Peek();
+                    if (restOverlay != null && restOverlay is CanvasItem restOv && restOv.IsInsideTree() && restOv.IsVisibleInTree())
                     {
-                        // Check if an overlay (card select for smith) is on top
-                        var restOverlay = NOverlayStack.Instance?.Peek();
-                        if (restOverlay != null && restOverlay is CanvasItem restOv && restOv.IsInsideTree() && restOv.IsVisibleInTree())
+                        var restOvType = restOverlay.GetType().Name;
+                        if (restOvType.Contains("Select") || restOvType.Contains("Upgrade") || restOvType.Contains("Card"))
                         {
-                            var restOvType = restOverlay.GetType().Name;
-                            if (restOvType.Contains("Select") || restOvType.Contains("Upgrade") || restOvType.Contains("Card"))
+                            // Fall through to overlay check below (card_select)
+                        }
+                        else
+                        {
+                            // Non-card overlay on rest site — still rest_site
+                            var proceedBtn2 = restRoom.ProceedButton;
+                            if (proceedBtn2 != null && proceedBtn2.IsEnabled)
                             {
-                                // Fall through to overlay check below
+                                if (NMapScreen.Instance?.IsOpen != true)
+                                    return "map";
                             }
                             else
                             {
                                 return "rest_site";
                             }
                         }
-                        else
+                    }
+                    else
+                    {
+                        // No overlay — check proceed button
+                        var proceedBtn = restRoom.ProceedButton;
+                        if (proceedBtn == null || !proceedBtn.IsEnabled)
                         {
                             return "rest_site";
                         }
+                        // Proceed enabled, rest complete
+                        if (NMapScreen.Instance?.IsOpen != true)
+                            return "map";
                     }
-                    // Proceed button showing = rest complete, fall through to map check
                 }
                 if (nRun.MerchantRoom != null && ((Control)nRun.MerchantRoom).IsVisibleInTree())
                 {
@@ -289,7 +301,15 @@ public static class StateReader
         }
         catch { /* overlay stack may not exist */ }
 
-        // Nothing matched — return "unknown" so agents don't silently get stuck
+        // Nothing matched — check if we're in a transition
+        // If a run is in progress and we're between screens, return "map" as safe default
+        try
+        {
+            if (NRun.Instance != null && RunManager.Instance?.DebugOnlyGetState() != null)
+                return "map";
+        }
+        catch { }
+        
         return "unknown";
     }
 
