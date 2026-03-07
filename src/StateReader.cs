@@ -43,7 +43,7 @@ public static class StateReader
         return text;
     }
 
-    private static string SerializeCardDescription(CardModel card)
+    private static string SerializeCardDescription(CardModel card, bool forceUpgraded = false)
     {
         try
         {
@@ -51,9 +51,10 @@ public static class StateReader
             if (desc == null) return "";
             card.DynamicVars.AddTo(desc);
             var text = StripBBCode(desc.GetFormattedText());
+            var isUp = forceUpgraded || card.IsUpgraded;
             // Strip unresolved template tags like {Block:diff()}, {IfUpgraded:show:| text}
-            text = System.Text.RegularExpressions.Regex.Replace(text, @"\{IfUpgraded:show:\|([^}]*)\}", card.IsUpgraded ? "$1" : "");
-            text = System.Text.RegularExpressions.Regex.Replace(text, @"\{IfUpgraded:hide:\|([^}]*)\}", card.IsUpgraded ? "" : "$1");
+            text = System.Text.RegularExpressions.Regex.Replace(text, @"\{IfUpgraded:show:\|([^}]*)\}", isUp ? "$1" : "");
+            text = System.Text.RegularExpressions.Regex.Replace(text, @"\{IfUpgraded:hide:\|([^}]*)\}", isUp ? "" : "$1");
             text = System.Text.RegularExpressions.Regex.Replace(text, @"\{[^}]+\}", "");
             // Clean up whitespace
             text = System.Text.RegularExpressions.Regex.Replace(text, @"\s+", " ").Trim();
@@ -850,6 +851,19 @@ public static class StateReader
         // Description (resolve dynamic vars like damage/block values)
         try { info["description"] = SerializeCardDescription(card); }
         catch { info["description"] = null; }
+
+        // Upgrade preview for non-upgraded cards
+        if (!card.IsUpgraded)
+        {
+            try
+            {
+                var upDesc = SerializeCardDescription(card, forceUpgraded: true);
+                var curDesc = info["description"] as string ?? "";
+                if (upDesc != curDesc && upDesc.Length > 0)
+                    info["upgrade_preview"] = upDesc;
+            }
+            catch { }
+        }
 
         // Damage
         try { info["damage"] = card.DynamicVars.ContainsKey("Damage") ? (int)card.DynamicVars.Damage.BaseValue : null; }
