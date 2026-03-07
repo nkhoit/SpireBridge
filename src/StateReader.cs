@@ -859,7 +859,7 @@ public static class StateReader
             try
             {
                 _inUpgradePreview = true;
-                var clone = card.CreateClone();
+                var clone = (CardModel)card.MutableClone();
                 clone.UpgradeInternal();
                 var upgraded = SerializeCard(clone);
                 var preview = new Dictionary<string, object>();
@@ -870,7 +870,7 @@ public static class StateReader
                 if (preview.Count > 0)
                     info["upgrade_preview"] = preview;
             }
-            catch { }
+            catch (Exception ex) { SpireBridgeMod.Log($"Upgrade preview error for {card.Title}: {ex.GetType().Name}: {ex.Message}"); }
             finally { _inUpgradePreview = false; }
         }
 
