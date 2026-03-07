@@ -832,6 +832,7 @@ public static class StateReader
         return choices;
     }
 
+    [ThreadStatic] private static bool _inUpgradePreview;
     private static Dictionary<string, object?> SerializeCard(CardModel card)
     {
         var info = new Dictionary<string, object?>
@@ -852,22 +853,25 @@ public static class StateReader
         try { info["description"] = SerializeCardDescription(card); }
         catch { info["description"] = null; }
 
-        // Upgrade preview for non-upgraded cards
-        if (!card.IsUpgraded && card.IsUpgradable)
+        // Upgrade preview: clone card, upgrade, serialize
+        if (!card.IsUpgraded && card.IsUpgradable && !_inUpgradePreview)
         {
             try
             {
-                var previewText = card.GetDescriptionForUpgradePreview();
-                if (previewText != null)
-                {
-                    previewText = StripBBCode(previewText);
-                    previewText = System.Text.RegularExpressions.Regex.Replace(previewText, @"\{[^}]+\}", "");
-                    previewText = System.Text.RegularExpressions.Regex.Replace(previewText, @"\s+", " ").Trim();
-                    if (previewText.Length > 0)
-                        info["upgrade_preview"] = previewText;
-                }
+                _inUpgradePreview = true;
+                var clone = card.CreateClone();
+                clone.UpgradeInternal();
+                var upgraded = SerializeCard(clone);
+                var preview = new Dictionary<string, object>();
+                if (upgraded.ContainsKey("description"))
+                    preview["description"] = upgraded["description"];
+                if (upgraded.ContainsKey("vars"))
+                    preview["vars"] = upgraded["vars"];
+                if (preview.Count > 0)
+                    info["upgrade_preview"] = preview;
             }
             catch { }
+            finally { _inUpgradePreview = false; }
         }
 
         // Damage
