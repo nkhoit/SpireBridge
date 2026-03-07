@@ -201,6 +201,36 @@ public static class StateReader
                     if (NMapScreen.Instance?.IsOpen != true)
                         return "treasure";
                 }
+
+                // Event room — NRun.EventRoom is non-null only when _roomContainer.CurrentScene is NEventRoom
+                if (nRun.EventRoom != null && ((Control)nRun.EventRoom).IsVisibleInTree())
+                {
+                    if (NMapScreen.Instance?.IsOpen != true)
+                    {
+                        // Check if a card select overlay is on top (e.g. transform/remove from event)
+                        try
+                        {
+                            var evOverlay = NOverlayStack.Instance?.Peek();
+                            if (evOverlay != null && evOverlay is CanvasItem evOv && evOv.IsInsideTree() && evOv.IsVisibleInTree())
+                            {
+                                var evOvType = evOverlay.GetType().Name;
+                                if (evOvType.Contains("Select") || evOvType.Contains("Upgrade") || evOvType.Contains("Card") || evOvType.Contains("Transform"))
+                                {
+                                    // Fall through to overlay detection below
+                                }
+                                else
+                                {
+                                    return "event";
+                                }
+                            }
+                            else
+                            {
+                                return "event";
+                            }
+                        }
+                        catch { return "event"; }
+                    }
+                }
             }
         }
         catch { }
@@ -260,15 +290,6 @@ public static class StateReader
         catch { /* overlay stack may not exist */ }
 
         // Check for event room (events are room-based, not overlays)
-        try
-        {
-            var tree = (SceneTree)Engine.GetMainLoop();
-            var eventRoom = tree.Root.GetNodeOrNull("/root/Game/RootSceneContainer/Run/RoomContainer/EventRoom");
-            if (eventRoom != null && eventRoom.IsInsideTree())
-                return "event";
-        }
-        catch { }
-
         return "map";
     }
 
