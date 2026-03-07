@@ -71,6 +71,10 @@ public static class MapActions
             }
 
             SpireBridgeMod.Log($"choose_node: clicking ({row},{col}) type={targetNMapPoint.Point.PointType}");
+            SpireBridgeMod.Log($"  IsVisibleInTree: {targetNMapPoint.IsVisibleInTree()}");
+            SpireBridgeMod.Log($"  IsEnabled: {targetNMapPoint.IsEnabled}");
+            SpireBridgeMod.Log($"  MouseFilter: {targetNMapPoint.MouseFilter}");
+            SpireBridgeMod.Log($"  MapScreen.IsOpen: {NMapScreen.Instance?.IsOpen}");
             // Use ForceClick like AutoSlayer does (NMapPoint → NButton → NClickableControl)
             targetNMapPoint.ForceClick();
         }

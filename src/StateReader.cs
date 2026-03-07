@@ -335,11 +335,11 @@ public static class StateReader
         catch { /* overlay stack may not exist */ }
 
         // Nothing matched — check if we're in a transition
-        // If a run is in progress and we're between screens, return "map" as safe default
+        // If a run is in progress and we're between screens, return "unknown" to trigger polling
         try
         {
             if (NRun.Instance != null && RunManager.Instance?.DebugOnlyGetState() != null)
-                return "map";
+                return "unknown";
         }
         catch { }
         
