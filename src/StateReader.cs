@@ -427,6 +427,14 @@ public static class StateReader
                 if (combatState != null)
                 {
                     enemies = combatState.Enemies;
+                    // Also get HittableEnemies for consistent targeting indices
+                    try
+                    {
+                        var hittable = combatState.HittableEnemies;
+                        if (hittable != null && hittable.Any())
+                            enemies = hittable;
+                    }
+                    catch { }
                     SpireBridgeMod.Log($"BuildCombatState: Path 1 (player.Creature.CombatState) — {enemies?.Count() ?? 0} enemies");
                 }
             }
@@ -441,6 +449,13 @@ public static class StateReader
                     {
                         combatState = cmState;
                         enemies = cmState.Enemies;
+                        try
+                        {
+                            var hittable2 = cmState.HittableEnemies;
+                            if (hittable2 != null && hittable2.Any())
+                                enemies = hittable2;
+                        }
+                        catch { }
                         SpireBridgeMod.Log($"BuildCombatState: Path 2 (CombatManager.CombatState) — {enemies?.Count() ?? 0} enemies");
                     }
                 }
