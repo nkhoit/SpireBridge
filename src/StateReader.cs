@@ -548,7 +548,12 @@ public static class StateReader
                     ["is_proceed"] = btn.Option?.IsProceed ?? false,
                 };
                 // Try to get label text
-                try { opt["text"] = StripBBCode(btn.Option?.Description?.GetFormattedText() ?? btn.Option?.TextKey ?? ""); } catch { opt["text"] = ""; }
+                try { 
+                    var text = StripBBCode(btn.Option?.Description?.GetFormattedText() ?? "");
+                    if (string.IsNullOrWhiteSpace(text)) text = btn.Option?.TextKey ?? "";
+                    if (string.IsNullOrWhiteSpace(text) && (btn.Option?.IsProceed ?? false)) text = "[Proceed]";
+                    opt["text"] = text;
+                } catch { opt["text"] = ""; }
                 try { opt["event_id"] = btn.Event?.Id?.Entry; } catch { }
                 options.Add(opt);
             }
