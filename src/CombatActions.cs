@@ -176,6 +176,11 @@ public static class CombatActions
                 target = combatState?.HittableEnemies.FirstOrDefault();
             }
         }
+        else
+        {
+            // Self-targeting potions (Strength, etc.) — target the player
+            target = player.Creature;
+        }
 
         potion.EnqueueManualUse(target);
         return CommandHandler.Ok("use_potion", new { potion = potion.Id.Entry });
