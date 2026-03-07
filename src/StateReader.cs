@@ -870,7 +870,7 @@ public static class StateReader
                 if (preview.Count > 0)
                     info["upgrade_preview"] = preview;
             }
-            catch (Exception ex) { SpireBridgeMod.Log($"Upgrade preview error for {card.Title}: {ex.GetType().Name}: {ex.Message}"); }
+            catch { }
             finally { _inUpgradePreview = false; }
         }
 
