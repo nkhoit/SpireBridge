@@ -180,4 +180,29 @@ public static class CombatActions
         potion.EnqueueManualUse(target);
         return CommandHandler.Ok("use_potion", new { potion = potion.Id.Entry });
     }
+
+    public static string DiscardPotion(JsonElement request)
+    {
+        var runState = RunManager.Instance?.DebugOnlyGetState();
+        if (runState == null)
+            return CommandHandler.Error("no_run", "No active run");
+
+        var player = LocalContext.GetMe(runState);
+        if (player == null)
+            return CommandHandler.Error("no_player", "No active player");
+
+        if (!request.TryGetProperty("potion_index", out var potionIdxEl))
+            return CommandHandler.Error("missing_param", "discard_potion requires 'potion_index'");
+
+        int potionIndex = potionIdxEl.GetInt32();
+        if (potionIndex < 0 || potionIndex >= player.PotionSlots.Count)
+            return CommandHandler.Error("invalid_index", $"potion_index {potionIndex} out of range");
+
+        var potion = player.PotionSlots[potionIndex];
+        if (potion == null)
+            return CommandHandler.Error("empty_slot", $"Potion slot {potionIndex} is empty");
+
+        player.DiscardPotionInternal(potion);
+        return CommandHandler.Ok("discard_potion", new { potion_index = potionIndex, potion = potion.Id.Entry });
+    }
 }

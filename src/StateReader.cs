@@ -401,6 +401,15 @@ public static class StateReader
                 {
                     if (btn.Reward is MegaCrit.Sts2.Core.Rewards.GoldReward gold)
                         r["gold"] = gold.Amount;
+                    else if (btn.Reward is MegaCrit.Sts2.Core.Rewards.PotionReward potion && potion.Potion != null)
+                    {
+                        r["potion_id"] = potion.Potion.Id.Entry;
+                        r["name"] = StripBBCode(potion.Potion.Title?.GetFormattedText() ?? potion.Potion.Id.Entry);
+                    }
+                    else if (btn.Reward is MegaCrit.Sts2.Core.Rewards.RelicReward relicReward)
+                    {
+                        try { r["name"] = StripBBCode(relicReward.Description?.GetFormattedText() ?? "Relic"); } catch { }
+                    }
                 }
                 catch { }
                 rewards.Add(r);
@@ -847,6 +856,22 @@ public static class StateReader
             SpireBridgeMod.Log($"BuildAvailableActions error: {ex.Message}");
         }
 
+        // Discard potion available on any screen when potions exist
+        try
+        {
+            var player2 = state["player"] as Dictionary<string, object?>;
+            if (player2?["potions"] is IEnumerable<object> allPotions)
+                foreach (var p in allPotions)
+                    if (p is Dictionary<string, object?> pot)
+                        actions.Add(new Dictionary<string, object?>
+                        {
+                            ["action"] = "discard_potion",
+                            ["potion_index"] = pot["slot"],
+                            ["description"] = $"Discard {pot.GetValueOrDefault("name", pot["id"])}"
+                        });
+        }
+        catch { }
+
         return actions;
     }
 
@@ -983,13 +1008,26 @@ public static class StateReader
             if (state["rewards"] is IEnumerable<object> rewards)
                 foreach (var r in rewards)
                     if (r is Dictionary<string, object?> reward)
+                    {
+                        var type = reward["type"]?.ToString() ?? "unknown";
+                        string desc = type;
+                        if (type == "GoldReward" && reward.ContainsKey("gold"))
+                            desc = $"Take {reward["gold"]} Gold";
+                        else if (type == "PotionReward" && reward.ContainsKey("name"))
+                            desc = $"Take {reward["name"]} potion";
+                        else if (type == "RelicReward" && reward.ContainsKey("name"))
+                            desc = $"Take {reward["name"]} relic";
+                        else if (type == "CardReward")
+                            desc = "Choose a card reward";
+                        
                         actions.Add(new Dictionary<string, object?>
                         {
                             ["action"] = "choose_reward",
                             ["index"] = reward["index"],
                             ["type"] = reward["type"],
-                            ["description"] = $"Take {reward["type"]}"
+                            ["description"] = desc
                         });
+                    }
             actions.Add(new Dictionary<string, object?> { ["action"] = "proceed", ["description"] = "Skip remaining rewards and proceed" });
         }
         catch { }

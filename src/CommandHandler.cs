@@ -39,6 +39,7 @@ public static class CommandHandler
                     "play" => CombatActions.PlayCard(doc.RootElement),
                     "end_turn" => CombatActions.EndTurn(),
                     "use_potion" => CombatActions.UsePotion(doc.RootElement),
+                    "discard_potion" => CombatActions.DiscardPotion(doc.RootElement),
                     "choose_node" => MapActions.ChooseNode(doc.RootElement),
                     // Stubs for v0.1
                     "console" => ConsoleAction.Execute(doc.RootElement),
