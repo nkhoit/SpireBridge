@@ -44,7 +44,14 @@ public static class StateReader
             var desc = card.Description;
             if (desc == null) return "";
             card.DynamicVars.AddTo(desc);
-            return StripBBCode(desc.GetFormattedText());
+            var text = StripBBCode(desc.GetFormattedText());
+            // Strip unresolved template tags like {Block:diff()}, {IfUpgraded:show:| text}
+            text = System.Text.RegularExpressions.Regex.Replace(text, @"\{IfUpgraded:show:\|([^}]*)\}", card.IsUpgraded ? "$1" : "");
+            text = System.Text.RegularExpressions.Regex.Replace(text, @"\{IfUpgraded:hide:\|([^}]*)\}", card.IsUpgraded ? "" : "$1");
+            text = System.Text.RegularExpressions.Regex.Replace(text, @"\{[^}]+\}", "");
+            // Clean up whitespace
+            text = System.Text.RegularExpressions.Regex.Replace(text, @"\s+", " ").Trim();
+            return text;
         }
         catch { return ""; }
     }
