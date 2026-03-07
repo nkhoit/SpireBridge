@@ -35,7 +35,8 @@ public static class StateReader
     public static string StripBBCode(string text)
     {
         text = BbCodeRegex.Replace(text, "");
-        // Strip resource paths like res://images/packed/sprite_fonts/ironclad_energy_icon.png
+        // Replace resource paths (energy icons etc.) with text equivalents
+        text = System.Text.RegularExpressions.Regex.Replace(text, @"res://[^\s]*energy[^\s]*\.png", "[Energy]", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
         text = System.Text.RegularExpressions.Regex.Replace(text, @"res://[^\s]+", "");
         // Clean up whitespace
         text = System.Text.RegularExpressions.Regex.Replace(text, @"\s+", " ").Trim();
