@@ -409,6 +409,31 @@ public static class ScreenActions
             FindAllRecursive(child, results);
     }
 
+    public static string OpenChest()
+    {
+        try
+        {
+            var treasureRoom = NRun.Instance?.TreasureRoom;
+            if (treasureRoom == null)
+                return CommandHandler.Error("not_in_treasure", "Not in a treasure room");
+
+            var chestBtn = ((Node)treasureRoom).GetNodeOrNull<NButton>("%Chest");
+            if (chestBtn == null)
+                return CommandHandler.Error("no_chest", "Chest button not found");
+
+            if (!chestBtn.IsEnabled)
+                return CommandHandler.Error("chest_opened", "Chest already opened");
+
+            SpireBridgeMod.Log("open_chest: clicking chest button");
+            chestBtn.ForceClick();
+            return CommandHandler.Ok("open_chest", new { opened = true });
+        }
+        catch (Exception ex)
+        {
+            return CommandHandler.Error("error", $"Open chest error: {ex.Message}");
+        }
+    }
+
     /// <summary>Safely find NButton descendants, catching BadImageFormatException from problematic nodes.</summary>
         public static string ShopBuy(JsonElement request)
     {

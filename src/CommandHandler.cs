@@ -50,6 +50,7 @@ public static class CommandHandler
                     "confirm" => ScreenActions.Confirm(),
                     "choose_rest_option" => ScreenActions.ChooseRestOption(doc.RootElement),
                     "shop_buy" => ScreenActions.ShopBuy(doc.RootElement),
+                    "open_chest" => ScreenActions.OpenChest(),
                     "start_run" => RunActions.StartRun(doc.RootElement),
                     "abandon_run" => RunActions.AbandonRun(),
                     "debug_tree" => DebugTree(doc.RootElement),

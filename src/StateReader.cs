@@ -13,6 +13,7 @@ using MegaCrit.Sts2.Core.Map;
 using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.MonsterMoves.Intents;
 using MegaCrit.Sts2.Core.Nodes.Screens.Map;
+using MegaCrit.Sts2.Core.Nodes.GodotExtensions;
 using MegaCrit.Sts2.Core.Nodes.Screens.Overlays;
 using MegaCrit.Sts2.Core.AutoSlay.Helpers;
 using MegaCrit.Sts2.Core.Nodes.Cards.Holders;
@@ -792,13 +793,23 @@ public static class StateReader
                             {
                                 if (entry.IsStocked)
                                 {
+                                    string itemName = "item";
+                                    if (entry is MegaCrit.Sts2.Core.Entities.Merchant.MerchantCardEntry ce && ce.CreationResult?.Card != null)
+                                        itemName = ce.CreationResult.Card.Title;
+                                    else if (entry is MegaCrit.Sts2.Core.Entities.Merchant.MerchantRelicEntry re && re.Model != null)
+                                        try { itemName = StripBBCode(re.Model.Title?.GetFormattedText() ?? re.Model.Id.Entry); } catch { itemName = re.Model.Id.Entry; }
+                                    else if (entry is MegaCrit.Sts2.Core.Entities.Merchant.MerchantPotionEntry pe && pe.Model != null)
+                                        try { itemName = StripBBCode(pe.Model.Title?.GetFormattedText() ?? pe.Model.Id.Entry); } catch { itemName = pe.Model.Id.Entry; }
+                                    else if (entry is MegaCrit.Sts2.Core.Entities.Merchant.MerchantCardRemovalEntry)
+                                        itemName = "Card Removal";
+
                                     actions.Add(new Dictionary<string, object?>
                                     {
                                         ["action"] = "shop_buy",
                                         ["index"] = shopIdx,
                                         ["cost"] = entry.Cost,
                                         ["affordable"] = entry.EnoughGold,
-                                        ["description"] = $"Buy item at index {shopIdx} for {entry.Cost} gold"
+                                        ["description"] = $"Buy {itemName} for {entry.Cost} gold"
                                     });
                                 }
                                 shopIdx++;
@@ -809,6 +820,15 @@ public static class StateReader
                     actions.Add(new Dictionary<string, object?> { ["action"] = "proceed", ["description"] = "Leave shop" });
                     break;
                 case "treasure":
+                    try {
+                        var tRoom = NRun.Instance?.TreasureRoom;
+                        if (tRoom != null)
+                        {
+                            var cBtn = ((Node)tRoom).GetNodeOrNull<NButton>("%Chest");
+                            if (cBtn != null && cBtn.IsEnabled)
+                                actions.Add(new Dictionary<string, object?> { ["action"] = "open_chest", ["description"] = "Open the treasure chest" });
+                        }
+                    } catch { }
                     actions.Add(new Dictionary<string, object?> { ["action"] = "proceed", ["description"] = "Leave treasure room" });
                     break;
             }
