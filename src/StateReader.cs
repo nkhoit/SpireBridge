@@ -36,8 +36,8 @@ public static class StateReader
     {
         text = BbCodeRegex.Replace(text, "");
         // Replace resource paths (energy icons etc.) with text equivalents
-        text = System.Text.RegularExpressions.Regex.Replace(text, @"res://[^\s]*energy[^\s]*\.png", "[Energy]", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-        text = System.Text.RegularExpressions.Regex.Replace(text, @"res://[^\s]+", "");
+        text = System.Text.RegularExpressions.Regex.Replace(text, @"res://[^\s]*?energy[^\s]*?\.png", "[Energy]", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        text = System.Text.RegularExpressions.Regex.Replace(text, @"res://\S+?\.(?:png|jpg|svg|tres)", "", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
         // Clean up whitespace
         text = System.Text.RegularExpressions.Regex.Replace(text, @"\s+", " ").Trim();
         return text;
