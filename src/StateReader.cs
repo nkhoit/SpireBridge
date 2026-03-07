@@ -857,6 +857,22 @@ public static class StateReader
         }
         catch { }
 
+        // Exhaust
+        try { info["exhausts"] = card.Exhausts; }
+        catch { }
+
+        // All dynamic vars (damage, block, magic number, hits, etc.)
+        try
+        {
+            var vars = new Dictionary<string, object?>();
+            foreach (var kvp in card.DynamicVars)
+            {
+                vars[kvp.Key] = (int)kvp.Value.BaseValue;
+            }
+            if (vars.Count > 0) info["vars"] = vars;
+        }
+        catch { }
+
         return info;
     }
 
