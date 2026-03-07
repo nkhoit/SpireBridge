@@ -858,7 +858,7 @@ public static class StateReader
         catch { }
 
         // Exhaust
-        try { info["exhausts"] = card.Exhausts; }
+        try { info["exhausts"] = card.Keywords.Contains(MegaCrit.Sts2.Core.Entities.Cards.CardKeyword.Exhaust); }
         catch { }
 
         // All dynamic vars (damage, block, magic number, hits, etc.)
