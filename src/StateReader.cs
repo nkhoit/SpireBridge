@@ -169,7 +169,21 @@ public static class StateReader
         if (runState.IsGameOver)
             return "game_over";
         if (CombatManager.Instance.IsInProgress)
+        {
+            // Check for card selection overlay on top of combat (e.g. Power Potion, Discovery)
+            try
+            {
+                var combatOverlay = NOverlayStack.Instance?.Peek();
+                if (combatOverlay != null && combatOverlay is CanvasItem combatOvNode && combatOvNode.IsInsideTree() && combatOvNode.IsVisibleInTree())
+                {
+                    var combatOvType = combatOverlay.GetType().Name;
+                    if (combatOvType.Contains("CardSelection") || combatOvType.Contains("CardSelect") || combatOvType.Contains("SelectScreen"))
+                        return "card_select";
+                }
+            }
+            catch { }
             return "combat";
+        }
 
         // Check room types BEFORE map (rooms are visible while map reports IsOpen)
         try
