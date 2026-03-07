@@ -853,14 +853,19 @@ public static class StateReader
         catch { info["description"] = null; }
 
         // Upgrade preview for non-upgraded cards
-        if (!card.IsUpgraded)
+        if (!card.IsUpgraded && card.IsUpgradable)
         {
             try
             {
-                var upDesc = SerializeCardDescription(card, forceUpgraded: true);
-                var curDesc = info["description"] as string ?? "";
-                if (upDesc != curDesc && upDesc.Length > 0)
-                    info["upgrade_preview"] = upDesc;
+                var preview = card.GetDescriptionForUpgradePreview();
+                if (preview != null)
+                {
+                    var previewText = StripBBCode(preview.GetFormattedText());
+                    previewText = System.Text.RegularExpressions.Regex.Replace(previewText, @"\{[^}]+\}", "");
+                    previewText = System.Text.RegularExpressions.Regex.Replace(previewText, @"\s+", " ").Trim();
+                    if (previewText.Length > 0)
+                        info["upgrade_preview"] = previewText;
+                }
             }
             catch { }
         }
