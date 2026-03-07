@@ -940,15 +940,18 @@ public static class StateReader
         var actions = new List<Dictionary<string, object?>>();
         var screen = state["screen"]?.ToString() ?? "";
 
-        // Check for visible proceed button first
+        // Check for visible proceed button (skip on map — map has its own proceed button that's always visible)
         bool hasProceed = false;
         try
         {
-            var tree = ((SceneTree)Engine.GetMainLoop());
-            var proceedButtons = FindAll<NProceedButton>(tree.Root);
-            hasProceed = proceedButtons.Any(b => b.IsVisibleInTree() && b.IsEnabled);
-            if (hasProceed)
-                actions.Add(new Dictionary<string, object?> { ["action"] = "proceed", ["description"] = "Proceed" });
+            if (screen != "map")
+            {
+                var tree = ((SceneTree)Engine.GetMainLoop());
+                var proceedButtons = FindAll<NProceedButton>(tree.Root);
+                hasProceed = proceedButtons.Any(b => b.IsVisibleInTree() && b.IsEnabled);
+                if (hasProceed)
+                    actions.Add(new Dictionary<string, object?> { ["action"] = "proceed", ["description"] = "Proceed" });
+            }
         }
         catch { }
 
@@ -960,7 +963,7 @@ public static class StateReader
                     BuildCombatActions(state, actions);
                     break;
                 case "map":
-                    if (!hasProceed) BuildMapActions(state, actions);
+                    BuildMapActions(state, actions);
                     break;
                 case "rewards":
                     BuildRewardActions(state, actions);
