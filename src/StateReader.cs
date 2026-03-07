@@ -348,8 +348,11 @@ public static class StateReader
             info["powers"] = creature.Powers.Select(SerializePower).ToList();
             info["hand"] = player.PlayerCombatState.Hand.Cards.Select(SerializeCard).ToList();
             info["draw_pile_count"] = player.PlayerCombatState.DrawPile.Cards.Count;
+            info["draw_pile"] = player.PlayerCombatState.DrawPile.Cards.Select(SerializeCard).ToList();
             info["discard_pile_count"] = player.PlayerCombatState.DiscardPile.Cards.Count;
+            info["discard_pile"] = player.PlayerCombatState.DiscardPile.Cards.Select(SerializeCard).ToList();
             info["exhaust_pile_count"] = player.PlayerCombatState.ExhaustPile.Cards.Count;
+            info["exhaust_pile"] = player.PlayerCombatState.ExhaustPile.Cards.Select(SerializeCard).ToList();
             info["orb_slots"] = player.PlayerCombatState.OrbQueue?.ToString();
         }
 
