@@ -66,8 +66,9 @@ public static class CommandHandler
                         using var resultCheck = JsonDocument.Parse(result);
                         if (resultCheck.RootElement.TryGetProperty("status", out var statusEl) && statusEl.GetString() == "ok")
                         {
-                            // Use debounced push — waits for game UI to settle
-                            GameEventBridge.DebouncePush($"action_{action}");
+                            // Use debounced push with hard deadline — waits for game UI to settle
+                            // but guarantees a push within 2s even if events keep firing
+                            GameEventBridge.DebouncePushWithDeadline($"action_{action}");
                         }
                     }
                     catch { }

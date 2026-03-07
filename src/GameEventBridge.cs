@@ -20,6 +20,9 @@ public static class GameEventBridge
 
     /// <summary>Debounce window in seconds. State pushes after this much silence.</summary>
     private const float DebounceSec = 0.5f;
+    /// <summary>Max delay for command-triggered pushes — debounce but don't exceed this.</summary>
+    private const float MaxDelaySec = 2.0f;
+    private static ulong _deadlineId;
 
     public static void Subscribe()
     {
@@ -67,6 +70,24 @@ public static class GameEventBridge
         {
             // Only fire if no newer debounce has been scheduled
             if (myId == _debounceId)
+                FlushPush();
+        });
+    }
+
+    /// <summary>
+    /// Like DebouncePush but also sets a hard max deadline.
+    /// Used after command execution — ensures state arrives within MaxDelaySec
+    /// even if game events keep resetting the debounce.
+    /// </summary>
+    public static void DebouncePushWithDeadline(string eventName)
+    {
+        DebouncePush(eventName);
+        _deadlineId++;
+        var myDeadline = _deadlineId;
+        SpireBridgeMod.ScheduleAction(MaxDelaySec, () =>
+        {
+            // Force push if we still have a pending event (debounce kept resetting)
+            if (myDeadline == _deadlineId && _pendingEvent != null)
                 FlushPush();
         });
     }
