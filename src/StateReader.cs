@@ -19,6 +19,7 @@ using MegaCrit.Sts2.Core.AutoSlay.Helpers;
 using MegaCrit.Sts2.Core.Nodes.Cards.Holders;
 using MegaCrit.Sts2.Core.Runs;
 using MegaCrit.Sts2.Core.Nodes;
+using MegaCrit.Sts2.Core.Nodes.CommonUi;
 using MegaCrit.Sts2.Core.Nodes.RestSite;
 using MegaCrit.Sts2.Core.Nodes.Rooms;
 using MegaCrit.Sts2.Core.Rooms;
@@ -1081,6 +1082,19 @@ public static class StateReader
         {
             SpireBridgeMod.Log($"BuildAvailableActions error: {ex.Message}");
         }
+
+        // Generic proceed button detection — if visible and not already in actions
+        try
+        {
+            if (!actions.Any(a => a["action"]?.ToString() == "proceed"))
+            {
+                var tree = ((SceneTree)Engine.GetMainLoop());
+                var proceedButtons = FindAll<NProceedButton>(tree.Root);
+                if (proceedButtons.Any(b => b.IsVisibleInTree() && b.IsEnabled))
+                    actions.Add(new Dictionary<string, object?> { ["action"] = "proceed", ["description"] = "Proceed" });
+            }
+        }
+        catch { }
 
         // Discard potion available on any screen when potions exist
         try
