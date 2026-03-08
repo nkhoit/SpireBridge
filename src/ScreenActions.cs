@@ -293,31 +293,11 @@ public static class ScreenActions
                 holder.EmitSignal(NCardHolder.SignalName.Pressed, holder);
                 SpireBridgeMod.Log("choose_card: emitted Pressed signal");
 
-                // For NCardGridSelectionScreen (card removal, transform), auto-confirm after selection
-                if (overlay is NCardGridSelectionScreen gridScreen)
+                // Auto-confirm after selection for screens that need it
+                if (overlay is NCardGridSelectionScreen || overlayType.Contains("Select"))
                 {
-                    SpireBridgeMod.Log("choose_card: scheduling auto-confirm");
-                    // Schedule confirm after a short delay to let preview animation play
-                    SpireBridgeMod.ScheduleAction(0.8f, () =>
-                    {
-                        try
-                        {
-                            // Find any visible+enabled confirm button in the overlay
-                            var allConfirm = FindAll<NConfirmButton>((Node)gridScreen);
-                            SpireBridgeMod.Log($"choose_card: found {allConfirm.Count} confirm buttons");
-                            foreach (var btn in allConfirm)
-                            {
-                                SpireBridgeMod.Log($"  confirm btn: {btn.Name} visible={btn.IsVisibleInTree()} enabled={btn.IsEnabled}");
-                                if (btn.IsVisibleInTree() && btn.IsEnabled)
-                                {
-                                    btn.ForceClick();
-                                    SpireBridgeMod.Log($"choose_card: auto-confirmed via {btn.Name}");
-                                    break;
-                                }
-                            }
-                        }
-                        catch (Exception ex) { SpireBridgeMod.Log($"choose_card: auto-confirm failed: {ex.Message}"); }
-                    });
+                    SpireBridgeMod.Log($"choose_card: scheduling auto-confirm for {overlayType}");
+                    AutoConfirmOverlay(overlayNode, 0);
                 }
 
                 return CommandHandler.Ok("choose_card", new { index, count = gridHolders.Count, card = holder.CardModel?.Id?.ToString() });
@@ -418,6 +398,46 @@ public static class ScreenActions
     }
 
     /// <summary>Recursively find all nodes of type T.</summary>
+    /// <summary>
+    /// Retry-based auto-confirm: waits for a confirm button to become enabled, then clicks it.
+    /// Retries up to 5 times at 0.5s intervals.
+    /// </summary>
+    private static void AutoConfirmOverlay(Node overlayNode, int attempt)
+    {
+        const int maxAttempts = 5;
+        const float delaySeconds = 0.5f;
+
+        SpireBridgeMod.ScheduleAction(delaySeconds, () =>
+        {
+            try
+            {
+                var allConfirm = FindAll<NConfirmButton>(overlayNode);
+                SpireBridgeMod.Log($"auto-confirm attempt {attempt + 1}/{maxAttempts}: found {allConfirm.Count} confirm buttons");
+                foreach (var btn in allConfirm)
+                {
+                    SpireBridgeMod.Log($"  confirm btn: {btn.Name} visible={btn.IsVisibleInTree()} enabled={btn.IsEnabled}");
+                    if (btn.IsVisibleInTree() && btn.IsEnabled)
+                    {
+                        btn.ForceClick();
+                        SpireBridgeMod.Log($"auto-confirm: clicked {btn.Name}");
+                        return;
+                    }
+                }
+                // Retry if not yet at max attempts
+                if (attempt + 1 < maxAttempts)
+                {
+                    SpireBridgeMod.Log($"auto-confirm: no enabled button, retrying...");
+                    AutoConfirmOverlay(overlayNode, attempt + 1);
+                }
+                else
+                {
+                    SpireBridgeMod.Log($"auto-confirm: gave up after {maxAttempts} attempts");
+                }
+            }
+            catch (Exception ex) { SpireBridgeMod.Log($"auto-confirm failed: {ex.Message}"); }
+        });
+    }
+
     private static List<T> FindAll<T>(Node root) where T : Node
     {
         var results = new List<T>();
