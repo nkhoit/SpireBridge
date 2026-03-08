@@ -36,9 +36,22 @@ public static class MapActions
         // Validate it's a reachable node
         if (runState.VisitedMapCoords.Count == 0)
         {
-            // Must be in row 0
-            if (row != 0)
-                return CommandHandler.Error("invalid_node", "First node must be in row 0");
+            // First move — allow any node in the first available row
+            // (Act 1 starts at row 0, Act 2+ at row 1)
+            bool found = false;
+            for (int r = 0; r <= 2; r++)
+            {
+                var rowPoints = map.GetPointsInRow(r).ToList();
+                if (rowPoints.Count > 0)
+                {
+                    if (row != r)
+                        return CommandHandler.Error("invalid_node", $"First node must be in row {r}");
+                    found = true;
+                    break;
+                }
+            }
+            if (!found)
+                return CommandHandler.Error("invalid_node", "No starting nodes found");
         }
         else
         {
@@ -78,29 +91,53 @@ public static class MapActions
             // Force-enable if disabled (map nodes can be temporarily disabled during transitions)
             if (!targetNMapPoint.IsEnabled)
             {
-                SpireBridgeMod.Log($"  Map point disabled, attempting to enable via reflection");
-                // Try to find and set the backing field for IsEnabled
-                var type = targetNMapPoint.GetType();
-                while (type != null)
+                SpireBridgeMod.Log($"  Map point disabled, force-enabling via reflection");
+                try
                 {
-                    foreach (var field in type.GetFields(System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance))
+                    var enableField = typeof(NClickableControl).GetField("_isEnabled", 
+                        System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                    if (enableField != null)
                     {
-                        if (field.Name.ToLower().Contains("enable") || field.Name.ToLower().Contains("disabled"))
-                            SpireBridgeMod.Log($"    Field: {field.DeclaringType?.Name}.{field.Name} = {field.GetValue(targetNMapPoint)}");
+                        enableField.SetValue(targetNMapPoint, true);
+                        SpireBridgeMod.Log($"  _isEnabled set to true, IsEnabled now: {targetNMapPoint.IsEnabled}");
                     }
-                    foreach (var prop in type.GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance))
+                    else
                     {
-                        if (prop.Name.ToLower().Contains("enable") || prop.Name.ToLower().Contains("disabled") || prop.Name.ToLower().Contains("interact"))
-                        {
-                            try { SpireBridgeMod.Log($"    Prop: {prop.DeclaringType?.Name}.{prop.Name} = {prop.GetValue(targetNMapPoint)} (canWrite={prop.CanWrite})"); }
-                            catch { SpireBridgeMod.Log($"    Prop: {prop.DeclaringType?.Name}.{prop.Name} (read failed)"); }
-                        }
+                        SpireBridgeMod.Log($"  _isEnabled field not found");
                     }
-                    type = type.BaseType;
+                }
+                catch (Exception ex)
+                {
+                    SpireBridgeMod.Log($"  Force-enable failed: {ex.Message}");
                 }
             }
-            // Use ForceClick like AutoSlayer does (NMapPoint → NButton → NClickableControl)
-            targetNMapPoint.ForceClick();
+            // Use TravelToMapCoord for direct navigation (ForceClick may not work on disabled nodes)
+            try
+            {
+                var travelMethod = mapScreen.GetType().GetMethod("TravelToMapCoord",
+                    System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                if (travelMethod != null)
+                {
+                    SpireBridgeMod.Log($"  Using TravelToMapCoord({row},{col})");
+                    travelMethod.Invoke(mapScreen, new object[] { new MapCoord { row = row, col = col } });
+                }
+                else
+                {
+                    SpireBridgeMod.Log($"  TravelToMapCoord not found, falling back to ForceClick");
+                    if (!targetNMapPoint.IsEnabled)
+                    {
+                        var enableField = typeof(NClickableControl).GetField("_isEnabled",
+                            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                        enableField?.SetValue(targetNMapPoint, true);
+                    }
+                    targetNMapPoint.ForceClick();
+                }
+            }
+            catch (Exception ex)
+            {
+                SpireBridgeMod.Log($"  TravelToMapCoord failed: {ex.Message}, falling back to ForceClick");
+                targetNMapPoint.ForceClick();
+            }
         }
         catch (Exception ex)
         {
