@@ -67,13 +67,18 @@ public static class StateReader
             }
             
             var isUp = forceUpgraded || card.IsUpgraded;
-            // Strip unresolved template tags
-            text = System.Text.RegularExpressions.Regex.Replace(text, @"\{IfUpgraded:show:\|([^}]*)\}", isUp ? "$1" : "");
-            text = System.Text.RegularExpressions.Regex.Replace(text, @"\{IfUpgraded:hide:\|([^}]*)\}", isUp ? "" : "$1");
-            text = System.Text.RegularExpressions.Regex.Replace(text, @"\{[^}]+\}", "");
+            // Strip unresolved template tags (including nested ones like {IfUpgraded:show:{Damage}|{Alt}})
+            // First pass: handle IfUpgraded with possible nested braces
+            text = System.Text.RegularExpressions.Regex.Replace(text, @"\{IfUpgraded:show:([^|}]*)\|([^}]*)\}", isUp ? "$1" : "$2");
+            text = System.Text.RegularExpressions.Regex.Replace(text, @"\{IfUpgraded:hide:([^|}]*)\|([^}]*)\}", isUp ? "$2" : "$1");
+            // Strip remaining template tags (greedy to handle nesting)
+            text = System.Text.RegularExpressions.Regex.Replace(text, @"\{[^{}]*(\{[^{}]*\}[^{}]*)*\}", "");
+            // Final cleanup: stray template artifacts
+            text = System.Text.RegularExpressions.Regex.Replace(text, @"[|{}]", "");
             text = StripBBCode(text);
-            // Clean up whitespace
+            // Clean up whitespace and trailing punctuation artifacts
             text = System.Text.RegularExpressions.Regex.Replace(text, @"\s+", " ").Trim();
+            text = System.Text.RegularExpressions.Regex.Replace(text, @"\.\.\s*\)", ".").Trim();
             return text;
         }
         catch { return ""; }
