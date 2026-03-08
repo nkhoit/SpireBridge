@@ -32,16 +32,37 @@ public static class SpireBridgeMod
         thread.Start();
 
         // Register a process callback on the main thread to handle queued messages
-        var timer = new Godot.Timer();
-        timer.WaitTime = 0.05; // 50ms tick
-        timer.Autostart = true;
-        timer.Timeout += ProcessPendingMessages;
+        _processTimer = new Godot.Timer();
+        _processTimer.WaitTime = 0.05; // 50ms tick
+        _processTimer.Autostart = true;
+        _processTimer.Timeout += ProcessPendingMessages;
 
-        // Add timer to scene tree
+        // Also register a watchdog timer directly on the SceneTree to re-add the process timer if lost
         var tree = (SceneTree)Engine.GetMainLoop();
-        tree.Root.CallDeferred("add_child", timer);
+        tree.Root.CallDeferred("add_child", _processTimer);
+        
+        // Use SceneTree process notification as backup
+        tree.ProcessFrame += EnsureTimerAlive;
 
         Log("SpireBridge initialized. WebSocket server starting on port " + Port);
+    }
+
+    private static Godot.Timer? _processTimer;
+    
+    private static void EnsureTimerAlive()
+    {
+        try
+        {
+            if (_processTimer == null || !_processTimer.IsInsideTree())
+            {
+                Log("Timer lost from tree! Re-adding...");
+                _processTimer ??= new Godot.Timer { WaitTime = 0.05, Autostart = true };
+                _processTimer.Timeout += ProcessPendingMessages;
+                var tree = (SceneTree)Engine.GetMainLoop();
+                tree.Root.AddChild(_processTimer);
+            }
+        }
+        catch (Exception ex) { Log($"EnsureTimerAlive error: {ex.Message}"); }
     }
 
     private static bool _gameEventsSubscribed;
@@ -162,6 +183,8 @@ public static class SpireBridgeMod
             _pendingMessages.Clear();
         }
 
+        Log($"ProcessPendingMessages: {batch.Count} messages");
+
         foreach (var (client, message) in batch)
         {
             try
@@ -171,8 +194,13 @@ public static class SpireBridgeMod
             }
             catch (Exception ex)
             {
-                var error = JsonSerializer.Serialize(new { error = ex.Message });
-                SendAsync(client, error);
+                Log($"ProcessPendingMessages error: {ex.Message}");
+                try
+                {
+                    var error = JsonSerializer.Serialize(new { status = "error", error = ex.Message });
+                    SendAsync(client, error);
+                }
+                catch { /* client gone */ }
             }
         }
     }

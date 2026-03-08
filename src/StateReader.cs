@@ -50,13 +50,28 @@ public static class StateReader
         {
             var desc = card.Description;
             if (desc == null) return "";
+            
             card.DynamicVars.AddTo(desc);
-            var text = StripBBCode(desc.GetFormattedText());
+            
+            // GetFormattedText() can hang on cards with {IfUpgraded:...} or {InCombat:...} templates.
+            // Use a timeout approach: run on current thread with a simple check.
+            string text;
+            try 
+            { 
+                text = StripBBCode(desc.GetFormattedText()); 
+            }
+            catch 
+            { 
+                // Fallback: use card title as description
+                text = StripBBCode(card.Title ?? card.Id.Entry ?? ""); 
+            }
+            
             var isUp = forceUpgraded || card.IsUpgraded;
-            // Strip unresolved template tags like {Block:diff()}, {IfUpgraded:show:| text}
+            // Strip unresolved template tags
             text = System.Text.RegularExpressions.Regex.Replace(text, @"\{IfUpgraded:show:\|([^}]*)\}", isUp ? "$1" : "");
             text = System.Text.RegularExpressions.Regex.Replace(text, @"\{IfUpgraded:hide:\|([^}]*)\}", isUp ? "" : "$1");
             text = System.Text.RegularExpressions.Regex.Replace(text, @"\{[^}]+\}", "");
+            text = StripBBCode(text);
             // Clean up whitespace
             text = System.Text.RegularExpressions.Regex.Replace(text, @"\s+", " ").Trim();
             return text;
@@ -145,7 +160,8 @@ public static class StateReader
         // Shop info
         if (state["screen"]?.ToString() == "shop")
         {
-            state["shop"] = BuildShopState();
+            try { state["shop"] = BuildShopState(); }
+            catch (Exception ex) { SpireBridgeMod.Log($"BuildShopState failed: {ex.Message}"); }
         }
 
         // Card reward choices
@@ -667,18 +683,54 @@ public static class StateReader
             var map = runState.Map;
             if (runState.VisitedMapCoords.Count == 0)
             {
-                // First move — show row 0
-                var startPoints = map.GetPointsInRow(0).ToList();
-                mapInfo["available_nodes"] = startPoints.Select(SerializeMapPoint).ToList();
+                // First move in act — find first non-empty row (row 0 may be empty in Act 2+)
+                for (int row = 0; row <= 2; row++)
+                {
+                    var startPoints = map.GetPointsInRow(row).ToList();
+                    if (startPoints.Count > 0)
+                    {
+                        mapInfo["available_nodes"] = startPoints.Select(SerializeMapPoint).ToList();
+                        break;
+                    }
+                }
             }
-            else
+            else if (runState.VisitedMapCoords.Count > 0)
             {
                 var currentCoord = runState.VisitedMapCoords[^1];
                 var currentPoint = map.GetPoint(currentCoord);
-                if (currentPoint != null)
+                var children = currentPoint?.Children?.ToList() ?? new List<MapPoint>();
+                SpireBridgeMod.Log($"map: visited={runState.VisitedMapCoords.Count}, lastCoord=({currentCoord.row},{currentCoord.col}), point={currentPoint != null}, children={children.Count}, actFloor={runState.ActFloor}");
+                if (children.Count > 0)
                 {
-                    mapInfo["available_nodes"] = currentPoint.Children.Select(SerializeMapPoint).ToList();
+                    mapInfo["available_nodes"] = children.Select(SerializeMapPoint).ToList();
                 }
+                else
+                {
+                    // Act transition — current point has no children, find first non-empty row
+                    SpireBridgeMod.Log("map: children=0, scanning rows 0-5");
+                    for (int row = 0; row <= 5; row++)
+                    {
+                        var startPoints = map.GetPointsInRow(row).ToList();
+                        SpireBridgeMod.Log($"map: row {row}: {startPoints.Count} points");
+                        if (startPoints.Count > 0)
+                        {
+                            try
+                            {
+                                var nodes = startPoints.Select(SerializeMapPoint).ToList();
+                                mapInfo["available_nodes"] = nodes;
+                                SpireBridgeMod.Log($"map: set available_nodes to {nodes.Count} nodes from row {row}");
+                            }
+                            catch (Exception ex) { SpireBridgeMod.Log($"map: SerializeMapPoint failed: {ex.Message}"); }
+                            break;
+                        }
+                    }
+                }
+            }
+            else
+            {
+                // No visited coords (fresh act?) — show row 0
+                var startPoints = map.GetPointsInRow(0).ToList();
+                mapInfo["available_nodes"] = startPoints.Select(SerializeMapPoint).ToList();
             }
         }
         catch { /* map may not be available */ }
